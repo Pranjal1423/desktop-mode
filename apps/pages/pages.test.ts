@@ -149,6 +149,59 @@ describe( 'the pages view', () => {
 		expect( update ).toHaveBeenCalledWith( { nativePagesHiddenColumns: [ 'author' ] }, { windowId: 'test-window' } );
 	} );
 
+	it( 'paints the author column in Pages when only Posts hid it', () => {
+		( window as unknown as { wp: { os: { getOsSettings: unknown } } } ).wp.os.getOsSettings = () => ( {
+			nativePostsHiddenColumns: [ 'author' ],
+			nativePagesHiddenColumns: [],
+		} );
+		const { root } = mount( [ row( 1 ) ] );
+		const table = root.querySelector( '[data-os-posts-table]' ) as HTMLElement & {
+			columns?: Array< { key: string } >;
+		};
+		expect( ( table.columns ?? [] ).map( ( c ) => c.key ) ).toContain( 'author' );
+	} );
+
+	it( 'the Pages column menu shows Author checked when only Posts hid it', () => {
+		( window as unknown as { wp: { os: { getOsSettings: unknown } } } ).wp.os.getOsSettings = () => ( {
+			nativePostsHiddenColumns: [ 'author' ],
+			nativePagesHiddenColumns: [],
+		} );
+		const win = document.createElement( 'div' );
+		win.className = 'os-window';
+		const panel = document.createElement( 'div' );
+		panel.className = 'os-window__menu-panel';
+		win.appendChild( panel );
+		document.body.appendChild( win );
+		const { ctx, root } = mount( [ row( 1 ) ] );
+		win.appendChild( root );
+		app.mounted?.( ctx );
+		const authorItem = panel.querySelector( 'os-menu-item[value="desktop-mode-pages:author"]' );
+		expect( authorItem?.hasAttribute( 'checked' ) ).toBe( true );
+	} );
+
+	it( 'toggling a Pages column writes only that column, not the Posts set', () => {
+		const update = vi.fn();
+		( window as unknown as { wp: { os: { getOsSettings: unknown; updateOsSettings: unknown; subscribeOsSettings: unknown } } } ).wp.os = {
+			getOsSettings: () => ( {
+				nativePostsHiddenColumns: [ 'author' ],
+				nativePagesHiddenColumns: [],
+			} ),
+			updateOsSettings: update,
+			subscribeOsSettings: () => () => undefined,
+		};
+		const win = document.createElement( 'div' );
+		win.className = 'os-window';
+		const panel = document.createElement( 'div' );
+		panel.className = 'os-window__menu-panel';
+		win.appendChild( panel );
+		document.body.appendChild( win );
+		const { ctx, root } = mount( [ row( 1 ) ] );
+		win.appendChild( root );
+		app.mounted?.( ctx );
+		panel.dispatchEvent( new CustomEvent( 'os-menu-item-click', { detail: { value: 'desktop-mode-pages:parent' } } ) );
+		expect( update ).toHaveBeenCalledWith( { nativePagesHiddenColumns: [ 'parent' ] }, { windowId: 'test-window' } );
+	} );
+
 	it( 'rebuilds page columns when nativePagesHiddenColumns changes elsewhere', () => {
 		let settingsListener: ( () => void ) | null = null;
 		( window as unknown as { wp: { os: { getOsSettings: unknown; subscribeOsSettings: unknown } } } ).wp.os = {

@@ -55,7 +55,7 @@ export const ALLOWED_ORDERBY = [ 'date', 'title', 'author', 'modified', 'comment
 export type HiddenColumnsSettingKey = 'nativePostsHiddenColumns' | 'nativePagesHiddenColumns';
 
 /** The user's hidden-column preference, from the OS Settings API. */
-export function getHiddenColumns( settingKey: HiddenColumnsSettingKey = 'nativePostsHiddenColumns' ): Set< string > {
+export function getHiddenColumns( settingKey: HiddenColumnsSettingKey ): Set< string > {
 	try {
 		const api = window.wp?.os;
 		if ( api && typeof api.getOsSettings === 'function' ) {
@@ -282,7 +282,7 @@ export function buildAllColumns(
 export function pluginColumns(
 	env: CellEnv,
 	filterData: ColumnFilterData = EMPTY_FILTER_DATA,
-	hidden: ReadonlySet< string > = getHiddenColumns(),
+	hidden: ReadonlySet< string > = new Set(),
 ): OsTableColumn< PostListItem >[] {
 	const base = new Set( buildBaseColumns( env, new Map(), filterData ).map( ( c ) => c.key ) );
 	return buildColumns( env, new Map(), filterData, false, hidden ).filter( ( col ) => ! base.has( col.key ) );
@@ -305,7 +305,7 @@ export function buildColumns(
 	cache: CellCache,
 	filterData: ColumnFilterData = EMPTY_FILTER_DATA,
 	phone = false,
-	hidden: ReadonlySet< string > = getHiddenColumns(),
+	hidden: ReadonlySet< string > = new Set(),
 ): OsTableColumn< PostListItem >[] {
 	const all = buildAllColumns( env, cache, filterData );
 	const visible =

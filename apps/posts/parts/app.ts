@@ -148,7 +148,7 @@ function clientOf( ctx: Ctx, ui: UiState ): PostsRestClient {
 }
 
 /** The hidden-column set, read from the settings once and kept in step by the subscription. */
-function hiddenOf( ui: UiState, settingKey: HiddenColumnsSettingKey = 'nativePostsHiddenColumns' ): Set< string > {
+function hiddenOf( ui: UiState, settingKey: HiddenColumnsSettingKey ): Set< string > {
 	if ( ! ui.hidden ) {
 		ui.hidden = getHiddenColumns( settingKey );
 	}
@@ -383,7 +383,7 @@ export function createPostsApp( id: string, options: PostsAppOptions = {} ) {
 			</header>
 			${ list?.error ? html`<os-notice tone="danger">${ list.error }</os-notice>` : '' }
 			${ deskTools( displayCtx, ui.desk ) }
-			${ renderDesk( displayCtx, ui.desk, env, ui.filterData, hiddenOf( ui ), ui.feed.tail() ) }
+			${ renderDesk( displayCtx, ui.desk, env, ui.filterData, hiddenOf( ui, hiddenColumnsKey ), ui.feed.tail() ) }
 			<div class="os-app-list__body" data-os-posts-body ?hidden=${ ui.desk.view !== 'table' }>
 				<os-table
 					data-os-posts-table
