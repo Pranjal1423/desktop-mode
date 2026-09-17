@@ -1412,7 +1412,7 @@ The sites the overview's site switcher offers on a network: every site the user 
 apply_filters( 'openstation_multisite_sites', array $sites );
 ```
 
-Each entry: `id` (the blog id, as a string, or `member:<id>` for an install of an OpenStation network), `name`, `shellUrl` (that site's shell screen), `kind` (`local` for a site of this network, `member` for an install that joined from elsewhere, which the switcher marks as external). Trim it on a large network, reorder it, or rename an entry; a site dropped here is not offered, though the admin bar still reaches it.
+Each entry: `id` (the blog id, as a string, or `member:<id>` for an install of an OpenStation network), `name`, `shellUrl` (that site's shell screen), `adminUrl` and `active` on a site of this network (whether OpenStation is active there; a site without it opens `adminUrl` in a browser tab instead), `kind` (`local` for a site of this network, `member` for an install that joined from elsewhere, which the switcher marks as external). Trim it on a large network, reorder it, or rename an entry; a site dropped here is not offered, though the admin bar still reaches it.
 
 ```php
 add_filter( 'openstation_multisite_sites', function ( $sites ) {
@@ -2263,7 +2263,7 @@ Credentials and model routing are owned by **WordPress 7.0 Core**: configure a p
 
 > The built-in Copilot tools are [WordPress Abilities](https://developer.wordpress.org/apis/abilities-api/), listed at `GET /wp-abilities/v1/abilities`. Register a read-only ability and the assistant picks it up automatically — see "Extending the Copilot's tools" below.
 
-> **Removed.** Automatic AI analysis of posts, pages, and taxonomy terms was removed — the copilot now only analyzes comments (for the spam score), and the AI assistant finds content with WordPress's native keyword search. The following filters/actions no longer fire and have been removed: `openstation_ai_supported_post_types`, `openstation_ai_supported_taxonomies`, `openstation_ai_supported_types`, `openstation_ai_schema_content`, `openstation_ai_post_prompt`, `openstation_ai_term_prompt`, `openstation_ai_post_analyzed`, `openstation_ai_term_analyzed`.
+> **Removed.** Automatic AI analysis of posts, pages, and taxonomy terms was removed — the copilot performs no background analysis (automatic comment scoring was removed later, see [`migration-comments-ai-scoring.md`](./migration-comments-ai-scoring.md)), and the AI assistant finds content with WordPress's native keyword search. The following filters/actions no longer fire and have been removed: `openstation_ai_supported_post_types`, `openstation_ai_supported_taxonomies`, `openstation_ai_supported_types`, `openstation_ai_schema_content`, `openstation_ai_post_prompt`, `openstation_ai_term_prompt`, `openstation_ai_post_analyzed`, `openstation_ai_term_analyzed`.
 
 ### `openstation_ai_schema_comment` — Experimental
 
@@ -2317,7 +2317,7 @@ apply_filters( 'openstation_ai_model_config', array $config, array $context );
 // $context = { user_id, request_id, source, has_tools, has_schema }
 ```
 
-`model` takes a model id or an SDK `ModelInterface`; anything else is ignored. `custom_options` keys are **provider-native parameter names**, forwarded verbatim into the request body; nothing there is validated, and a bad key fails the turn as a `WP_Error`. `source` is one of `ai-copilot/search`, `ai-copilot/followup`, `ai-copilot/comment-analysis`, `agents/runner`, `widgets/drafts-suggestions`.
+`model` takes a model id or an SDK `ModelInterface`; anything else is ignored. `custom_options` keys are **provider-native parameter names**, forwarded verbatim into the request body; nothing there is validated, and a bad key fails the turn as a `WP_Error`. `source` is one of `ai-copilot/search`, `ai-copilot/followup`, `ai-copilot/comment-analysis`, `agents/runner`, `widgets/drafts-suggestions`, `mio/window`. The MIO source passes model configuration context only; it does not emit AI search transcript logging hooks.
 
 `custom_options` also feeds model discovery, not just the request body: the AI Client turns each key into a required option when it picks a model, so on a multi-provider connector an option only one model supports narrows the selection to it (or fails to match any).
 
@@ -2728,7 +2728,7 @@ if ( is_wp_error( $result ) ) {
 
 > **`style`.** Optional `wp_register_style()` handle. The shell resolves it to a `styleUrl` (and any `wp_add_inline_style()` blobs) and lazy-injects a `<link rel="stylesheet">` when the window's plugin is activated mid-session. Without `style`, a peer plugin activated from inside an open shell renders its window with **no CSS** until the user reloads — the parent shell already finished `wp_print_styles` before the plugin existed. If the handle isn't registered, the field is silently dropped (no error, no link); plugins active at boot continue to print through the normal `wp_print_styles` pipeline as before.
 
-> **`script` loads on first open.** The shell reads your render callback off `window.openStationNativeWindows[ <id> ]` *after* fetching the bundle, so nothing is required of you: register the handle, publish the callback, and the window works. What changes is *when* — a bundle is no longer printed on every admin page for a window the user may never open. `wp_localize_script` / `wp_add_inline_script` / `wp_set_script_translations` data is harvested off the registered handle into the payload and replayed around the injected `<script>` tag, so it arrives either way.
+> **`script` loads on first open.** The shell reads your render callback off `window.openStationNativeWindows[ <id> ]` *after* fetching the bundle, so nothing is required of you: register the handle, publish the callback, and the window works. What changes is *when* — a bundle is no longer printed on every admin page for a window the user may never open. `wp_localize_script` / `wp_add_inline_script` / `wp_set_script_translations` data is harvested off the registered handle into the payload and replayed around the injected `<script>` tag, so it arrives either way. So are the handle's **declared dependencies**: the closure WordPress would have resolved had it printed the handle is shipped with the window and loaded, in order, before the bundle — `wp-*` packages and your own handles alike, skipping anything the document already ran. A src-less alias (`wp_register_script( 'acme-config', false )` carrying your config through `wp_add_inline_script()`, declared as the bundle's dependency) has its inline data replayed in print order with nothing fetched. Declare what you use and it works on a live activation exactly as it does after a reload; see [`docs/migration-wp-package-globals.md`](./migration-wp-package-globals.md).
 >
 > **`scripts`** *(optional, `string[]`)* — companion handles loaded in order immediately **before** `script`. For a bundle that extends the window from outside it — subscribing to actions the window's own bundle fires, contributing a section — and therefore has to be listening before that bundle is parsed. Declaring it here is what keeps it off the boot critical path: it travels with the window it extends. Handles that were never registered are dropped silently, the same way `style` is.
 >
@@ -3592,22 +3592,6 @@ do_action( 'openstation_comments_window_after_bulk', string $action, int[] $proc
 
 Fires after a moderation batch finishes — from `/desktop-mode/v1/comments/bulk` and from the app's `moderate` action alike, since both run `openstation_comments_window_moderate()`. `$action` is one of `approve|unapprove|spam|unspam|trash|untrash`. `$processed` is the list of ids successfully acted on; `$skipped` is the list that failed a per-target cap or soft error.
 
-### `openstation_comments_ai_is_enabled` — Experimental *(filter)*
-
-```php
-apply_filters( 'openstation_comments_ai_is_enabled', bool $enabled ): bool
-```
-
-Whether AI moderation for new comments is enabled. Site-wide, not per-user — hooks here override the `desktop_mode_comments_ai_moderation` site option, which is useful for gating by environment (staging vs. production) or by feature flag.
-
-### `openstation_comments_ai_toggled` — Experimental *(action)*
-
-```php
-do_action( 'openstation_comments_ai_toggled', bool $enabled );
-```
-
-Fires after the Comments AI moderation toggle is changed via `POST /desktop-mode/v1/comments/ai-settings`. `$enabled` is the new state.
-
 ---
 
 ## Native Users window
@@ -3730,6 +3714,7 @@ The module's one capability gate. Default `current_user_can( 'edit_posts' )`. Re
 |---|---|
 | Whether the non-REST post-type bridge routes register at all — `desktop-mode/v1/post-type/<slug>` | `includes/my-wordpress/rest-post-type.php` |
 | The per-comment dossier route `desktop-mode/v1/comment-stats/<id>`, which then also checks that the caller can read the comment's parent post | `includes/my-wordpress/comment-stats.php` |
+| The user and term dossier routes `desktop-mode/v1/user-stats/<id>`, `desktop-mode/v1/user-footprint/<id>` and `desktop-mode/v1/term-stats/<taxonomy>/<id>`, which then scope every count and list to what the caller may read | `includes/my-wordpress/user-stats.php`, `user-footprint.php`, `term-stats.php` |
 | Whether the WooCommerce integration's boot config ships, so the client can reach the order / customer / product surfaces at all — those routes still enforce their own Woo capabilities on top | `includes/my-wordpress/integrations/woocommerce.php` |
 | Whether preview-action scripts registered by plugins are enqueued | `includes/my-wordpress/preview-actions.php` |
 | Whether Station Home offers the "WP Explorer" quick action | `apps/station-home/parts/snapshot.php` |
@@ -4071,7 +4056,7 @@ apply_filters( 'openstation_my_wordpress_user_stats', array $payload, int $user_
 
 The aggregated per-user dossier payload returned by `GET /desktop-mode/v1/user-stats/<id>` — drives the right-pane preview for a selected user (Author / Contributors sub-folders, and the Users folder root). Plugins can drop additional sections (badges, milestones, contribution streaks) without forking the JS render.
 
-The payload is permission-shaped before this filter runs: viewers without `list_users` (who are not the subject user) receive a published-only dossier — the recent-posts list is restricted to `publish`, `counts.posts` / `counts.pages` collapse to published-only totals, and sensitive profile fields (email, registered date, role) are withheld.
+The payload is permission-shaped before this filter runs: viewers without `list_users` (who are not the subject user) receive a published-only dossier. The recent-posts list is restricted to `publish`, `counts.posts` / `counts.pages` collapse to published-only totals, `counts.cpt`, `counts.commentsReceived` and `counts.commentsLeft` only count published rows of a viewable post type (`is_post_type_viewable()`), the comment counts also skipping password-protected and deleted parents and any parent the comment dossier's gate (`openstation_my_wordpress_can_read_comment_post()`) refuses the viewer, so a plugin's per-post `read_post` filter moves them too, and sensitive profile fields (email, username, registered date, roles) are withheld. For every viewer, `counts.cpt` leaves out the post types Core registers (`_builtin`). The payload is viewer-dependent, so never cache it under a subject-only key.
 
 ### `openstation_my_wordpress_user_footprint` — Experimental (filter)
 
@@ -4081,7 +4066,7 @@ apply_filters( 'openstation_my_wordpress_user_footprint', array $payload, int $u
 
 The per-user activity-footprint payload returned by `GET /desktop-mode/v1/user-footprint/<id>` — drives the full-body "View activity footprint" surface (right-click on a user tile → footprint). Carries a year of day-by-day activity, weekday + hour-of-day distribution, streak math, recent-events timeline, and totals. Plugins can extend the timeline with their own activity rows (deploys, badges earned, etc.) or replace the streak math with a domain-specific definition.
 
-Timeline rows whose underlying post is not published (draft, pending, private, future) are only emitted when the viewer passes `current_user_can( 'read_post' )` for that post — the gate applies across the post, post-update, and comment row sources — so unpublished titles never leak to ordinary logged-in users.
+The payload is permission-shaped before this filter runs, per post rather than per viewer tier. A timeline row is only emitted when the viewer may see its post: a public status of a viewable post type for everyone, `current_user_can( 'read_post' )` for any other status, `edit_post` for a post type with no readable front end, and, for comment rows, the comment dossier's parent gate (`edit_post` while the parent is still sealed by a password, though a viewer who has already entered it reads on `read_post` like anyone else, and `moderate_comments` once the parent is deleted). Every count that can reach those posts (`totals.posts`, `totals.pages`, `totals.comments`, `totals.updates`, and each day's `comments` / `updates`, which `streak` is computed from) applies the same gate to each post it counts, so a count never reports activity the timeline withholds, a plugin's per-post capability filter included: a Contributor gets published work only, and an Editor's totals include the drafts their timeline lists. `profile.roleLabels` and `profile.registered` stay gated on `list_users` or the subject viewing themselves. The payload is viewer-dependent, so never cache it under a subject-only key.
 
 ### `openstation_user_footprint_row_action` — Stable (filter)
 
@@ -5799,3 +5784,5 @@ reference until these graduate into a doc of their own.
 - [Native Desktop Host](./desktop-host.md) — solo mode, the Electron Adapter extension, and `wp.os.electron`.
 - [JavaScript Reference](./javascript-reference.md) — the event + postMessage side of the contract.
 - [Examples](./examples/README.md) — full-plugin recipes.
+
+MIO window consent and transient thinking are client-side `wp.hooks` actions (`os.mio.window-enabled-changed`, `os.mio.thinking-changed`), documented in the [JavaScript hook reference](./javascript-reference.md). They carry window/state identifiers only.

@@ -58,7 +58,11 @@ network picks its own set. An install that joined from elsewhere through
 an OpenStation network (`kind: 'member'` on its entry) is marked as
 **external**: a mark before its name, one line before the first of them,
 and a tooltip that says so, so the row reads as this network's own sites
-and then the ones that joined it. `switchToSite( multisite, value )` in
+and then the ones that joined it. A site of this network where OpenStation is not
+active (`active: false` on its entry) has no shell screen to switch to:
+it wears the same mark, and any click on it opens its regular `wp-admin`
+(`adminUrl`) in a browser tab, leaving the current segment selected;
+Tab steps over it. `switchToSite( multisite, value )` in
 the same module is the switch itself, the one a pick takes, and the shell
 also runs it for an app's `hop` effect (`$os->effects->add( 'hop',
 array( 'site' => $id ) )`, which is how the Network window's Open buttons
@@ -87,6 +91,19 @@ prefix, so `/wp-admin/index.php` and `/wp-admin/network/` would read as
 one place. If a window ever does show another admin, its
 `os-plugins-changed` payload repaints this dock with that admin's menu:
 the symptom to recognise.
+
+**My Sites follows the same rules.** Inside a window, Core's row links
+would open as tabs of the Dashboard window, so
+`openstation_multisite_my_sites_actions()` rewrites them through
+`myblogs_blog_actions`: Visit opens a browser tab, this site's Dashboard
+points at `index.php` so the window goes back to Home, and another site's
+Dashboard is a `target="_top"` navigation (the hop, which also works
+across origins) when OpenStation is active there, or a browser tab when
+it is not. The bridge leaves `_blank` and `_top` links on those URLs to
+the browser. The network Sites list gets the same treatment through
+`manage_sites_action_links` (`openstation_multisite_sites_row_actions()`),
+minus a current site: Visit opens a browser tab, and Dashboard is
+`_top` or `_blank` by the same test.
 
 **Landing in overview.** `openstation_overview` is a one-shot boot arg
 of the shell screen, like `target` and `intent`: read once server-side
@@ -141,8 +158,14 @@ Two things then have to know about `wp-admin/network/`: the target
 allowlist, which resolves the network's own filenames through
 `openstation_network_admin_target_allowlist()` (the site list cannot
 stand in, since the directories share filenames that mean different
-things), and menu URLs, `currentPage` and `adminUrl`, which resolve
-through `self_admin_url()` rather than `admin_url()`.
+things), and the URLs that follow the admin the request is in:
+`currentPage` and `adminUrl` through `self_admin_url()`, and menu URLs
+through `openstation_menu_admin_url()`. That helper gives the same answer
+as `self_admin_url()` without its filter, which receives the path: a host
+can use it to send one screen elsewhere, and WordPress.com points
+`plugin-install.php` at its own installer. Resolved through the filter,
+that screen's wp-admin menu row reads as off-site and the dock drops
+Plugins > Add Plugin.
 
 **Site-scoped native windows are not offered there.** Every one
 OpenStation ships reads the current site's REST API — Posts, Users and
@@ -150,8 +173,11 @@ the rest — so a `users.php` tile meaning "everyone on the network" would
 have opened one site's user list. A window says which admin offers it
 (`admin` in `openstation_register_window()`, `App::admin()` for an app:
 `site`, the default, `network`, or `any`), and the payload keeps the
-ones that belong (`openstation_native_window_offered_here()`); the
-Network app is the one that declares `network`. Dropping the site
+ones that belong (`openstation_native_window_offered_here()`). The
+Network app and OpenStation Preferences declare `any`: Preferences edits
+the user's own settings, which apply on every shell, and its site-wide
+options on the network admin are the main site's, the options that
+admin runs on. Dropping the site
 windows there is also what disarms the client-side URL remaps.
 
 ## The Network Admin dock tile

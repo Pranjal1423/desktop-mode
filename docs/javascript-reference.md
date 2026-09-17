@@ -702,7 +702,12 @@ confirmation dialog. The full pipeline is hookable via
 
 Iframes forward OS drops to the parent shell via
 `postMessage` of type `os-file-drop` with a
-`{ files: File[], x, y }` payload — same-origin only.
+`{ files: File[], x, y }` payload — same-origin only. A drop
+that lands on a native `<input type="file">`, or anywhere on
+Core's `form.wp-upload-form` box around one (Upload Plugin,
+Upload Theme), is handed to that input instead and never
+reaches the shell — see
+[`bridge-protocol.md`](bridge-protocol.md#os-file-drop-forwarder--os-file-drop).
 
 See [`docs/examples/os-file-drop.md`](examples/os-file-drop.md)
 for two end-to-end recipes (stamping the active folder on
@@ -752,6 +757,8 @@ The `server*` registries (commands, settings tabs, widgets, wallpapers, …) alr
 
 ### `os-settings-save-lifecycle` — Stable
 
+On `saved`, `savedSettings` is a defensive snapshot of the settings represented by that completion (server-confirmed when REST is configured, local-only otherwise). Compare it with the requested patch when waiting for a particular change: an earlier in-flight save can complete while newer optimistic edits are still queued. Do not infer confirmation from the current UI state alone.
+
 Fires on every phase transition of an OpenStation Preferences save — both the built-in panel's edits and programmatic patches via [`wp.os.updateOsSettings()`](#updateossettings-patch-opts---stable).
 
 **`detail` shape:**
@@ -761,6 +768,7 @@ Fires on every phase transition of an OpenStation Preferences save — both the 
     phase: 'pending' | 'saving' | 'saved' | 'failed',
     error?: string,            // 'failed' only — the error message
     rolledBackTo?: OsSettingsState,  // 'failed' only — see below
+    savedSettings?: OsSettingsState, // 'saved' only — snapshot represented by this save
 }
 ```
 
@@ -2527,10 +2535,14 @@ The display is orthogonal to the mode: `standalone` when the document runs as an
 
 Mio: a soft-body companion that floats over the wallpaper, falls onto nearby windows, watches the pointer, and can be dragged anywhere. Off by default; users toggle it from its **Mio** tile on the bottom dock, and can hide that tile from OpenStation Preferences → Navigation.
 
+Window registrations add a title-bar MIO toggle automatically. The lease exposes `isEnabled()` and `setEnabled(boolean)`; context `enabled` defaults to true. The dock master switch fades title toggles out/in without losing local choices. Window contexts supply a dynamic prompt, linked Markdown documents and private validated abilities. See [Window-scoped MIO](./mio-window-assistant.md) for `MioWindowContext`, `MioAbility`, lease lifetime, chained actions, memory-only conversation, chat tokens and `/mio/turn`. These actions never enter WordPress’s public Abilities registry. Leases also expose `getOperations()` and `inspectOperation(callId, signal?)` for content-free operation receipts and read-only status reconciliation. Context lifecycle callbacks, revisions, structured validation feedback, effect metadata and history compaction are documented in [Window-scoped MIO](./mio-window-assistant.md#turn-identity-and-operation-lifecycle).
+
 Full documentation — architecture, the simulation, the configuration table, the reason the canvas is never interactive — is in [mio.md](./mio.md).
 
 ```typescript
 interface MioApi {
+    registerWindow(windowId: string, context: MioWindowContext): MioWindowLease;
+    getWindowId(): string | null;
     isEnabled(): boolean;
     enable(): Promise< void >;             // persists the preference
     disable(): void;                       // persists; stops + hides, keeps the context
@@ -2552,6 +2564,12 @@ interface MioLook {
 ```
 
 `enable()` / `disable()` / `toggle()` write the per-user OS setting `mioEnabled` exactly as the dock tile does. **The user's look is per-user too** — it rides the same OpenStation Preferences blob as `mioStyle`, so a Mio built on a laptop is waiting on the phone. Only the resting position is browser-local (`localStorage`, `desktop-mode-mio-position`): where Mio sits is a fact about one screen, how it looks is a fact about the person.
+
+The dock’s MIO button and Features → **MIO API** share one per-user master switch (`mioEnabled`, default `false`). `mioApiEnabled` is a synchronized compatibility alias: either name can be patched, and `mioEnabled` wins if both are supplied. Switching off closes chat, cancels pending work, hides the mascot and window controls, and suspends leases. Re-enabling resumes existing leases and preserves per-window choices and callout dismissals.
+
+`mioShowOnWallpaper` (default `true`) controls only the desktop mascot. Turn off **Show MIO on wallpaper** in Features or MIO’s **Make it yours** panel to keep window chat and explicit callouts available without a desktop companion. The MIO dock tile’s right-click menu also offers Show/Hide MIO on wallpaper, so the preference remains reachable while the mascot is hidden. Ask MIO and `lease.openChat()` also require the AI assistant opt-in and a compatible configured connector. Callouts work without AI. See [availability switches](./mio-window-assistant.md#availability-switches).
+
+Window leases also expose `showCallout({id, target, message, onDismiss?})` and `clearCallout()`. `target` resolves a control inside the registered host or returns null. MIO stays hidden in idle windows; chat or an explicit tip reveals it. Callout dismissal lasts for the lease, and chat takes priority. See [callout lifecycle](./mio-window-assistant.md#explicit-control-callouts).
 
 `setStyle()` takes a **flat bag** of appearance keys and the look-physics keys — `shapePreset`, `shapeLobes`, `shapeAmount`, `shapeAngle`, `shapeShuffle`, `idleWobble`, `idleWobbleSpeed` — and splits them itself. Anything else is dropped: `radius` is a size rather than a look, and the spring constants are the site's. Every call applies live *and* records the change; `commitStyle()` flushes it immediately (the style panel calls it on close). Reach for `setConfig()` when a plugin wants to adjust Mio programmatically without that adjustment becoming the user's saved look.
 
@@ -3065,7 +3083,7 @@ window.wp.os.listDestructiveAdminActions().forEach( ( e ) => console.log( e.id )
 
 Programmatic access to the AI Copilot — same endpoint the built-in overlay talks to. Resolves to an `AskResult`; rejects on network errors, HTTP failures, or abort.
 
-The built-in content tools (`search_posts`, `search_pages`, `search_comments`, `search_comments_by_post`) run WordPress's native keyword search — the model derives a `query` from the user's request and the tools return matching titles + excerpts. (Posts, pages, and terms are no longer pre-analyzed; comment spam scoring is the only automatic AI analysis.) When you continue an exhausted search with `resumeTool` / `startOffset`, the original query is reused automatically.
+The built-in content tools (`search_posts`, `search_pages`, `search_comments`, `search_comments_by_post`) run WordPress's native keyword search — the model derives a `query` from the user's request and the tools return matching titles + excerpts. (Nothing is pre-analyzed: posts, pages, comments and terms are never analyzed in the background.) When you continue an exhausted search with `resumeTool` / `startOffset`, the original query is reused automatically.
 
 Results are scoped to what the requesting user may read. The comment tools drop every comment whose parent post the caller cannot access (private, draft, or password-protected parents, and non-viewable post types), and `search_comments_by_post` returns an empty batch — without the parent title — when the target post itself is unreadable. As in Core's comments REST controller, this filtering happens per row after the query, so a batch can carry fewer items than `total` implies; treat `total` / `has_more` as pagination hints, not as an exact count of readable matches. The final `entity` record applies the same readability check to the model-chosen id, resolving unreadable entities to `null` exactly like nonexistent ones.
 
@@ -3878,6 +3896,8 @@ See [`docs/examples/connect-to-window.md`](./examples/connect-to-window.md) for 
 
 Register a tab in the OpenStation Preferences window. The tab is appended (or sorted-in by `order`) alongside the built-in tabs — Appearance, Themes, Windows, Navigation, Features, Components, About — and renders its body via your `render( body, ctx )` callback.
 
+The sidebar search filters pages using rendered text and component labels. Preferences picks a single best matching control across the rendered pages, opens its page, and highlights the sidebar entry, enclosing `<os-section>`, and control. Control labels rank above option text, section headings, and descriptions; exact text ranks above prefixes and substrings. Ties use page order, so even a broad query highlights only one control. Clearing the query removes the highlight. For searchable plugin controls, use the kit's labelled form controls inside `<os-section heading="…" description="…">`; these attributes remain searchable even though the kit renders them in shadow DOM. Hidden controls and preserved component-demo subtrees are excluded from control highlighting.
+
 **Definition shape:**
 
 | Field | Type | Required | Notes |
@@ -3895,7 +3915,7 @@ Register a tab in the OpenStation Preferences window. The tab is appended (or so
 | Field | Type | Notes |
 |---|---|---|
 | `isAdmin` | `boolean` | `true` when current user has `manage_options`. |
-| `getOsSettings()` | `function` | Snapshot of the persisted OpenStation Preferences state — `{ wallpaper, accent, dockSize, windowRadius, unfocusEffect, ai: { enabled } }` plus `adminBarMode` (`'static'` \| `'dynamic'` \| `'hidden'` — how the WordPress admin bar presents above the shell; emitted as a `os-admin-bar-<mode>` body class), `desktopLayout`, `dockPlacement` (`'bottom'` \| `'left'` \| `'right'` — which edge the dock sits on; read by the one-rail layouts, ignored by `classic`), `dockBehavior` (`'static'` \| `'dynamic'` — the dock always on screen, or folded into a thin indicator line at its edge and morphed back when the pointer reaches that edge; stamped as `data-os-dock-behavior` on the rail; a dynamic rail reserves no [work area](#workarea--experimental)), `sideDockBehavior` (the same choice for the `classic` layout's sidebar, its own rail on its own edge; ignored by the one-rail layouts), `dockRailRenderer`, `desktopTheme`, `appliedThemeRecommendations`, the native-window opt-ins (`nativePostsEnabled`, `nativePostsHiddenColumns`, `nativePagesEnabled`, `nativePagesHiddenColumns`, `nativeUsersEnabled`, `nativePluginsEnabled`, `nativeCommentsEnabled`, `stationHomeEnabled` — Station Home as the Dashboard, default off), `adminAssetCacheEnabled` (the service worker's shared admin-asset cache) and `windowPrewarmEnabled` (hover-intent window preloading) — both default on and are read-only mirrors of site-wide Extended options, applied on shell reload, `developerModeEnabled`, `foldersSharingEnabled`, `navPlacement`, `navOrder`, and `dockPromotedPositions` — plus `customAccent`, `customGradient`, `customImage`, `wallpaperSettings`, `libraryHdOnly`, `heartbeatRate`, `showDesktopOnWallpaperClick`, `confirmCloseAllWindows`, `mioEnabled` and `mioStyle` — the snapshot IS the whole `OsSettingsState`; see `src/settings/types.ts` for the authoritative shape. `navPlacement` maps a nav-item id to `'rail' | 'desktop' | 'both' | 'hidden'` and `navOrder` is a flat ordering hint across every rail zone; both replaced the pre-navigation `itemVisibility` / `dockOrder` (see [migration-navigation.md](./migration-navigation.md)). `unfocusEffect` is the active unfocused-window effect id (`'darken'` default, `'none'` disables). `windowReveal` is the active window-reveal id — the clip-path transition that uncovers a window's content when it finishes loading (`'none'` by default; reveals are opt-in) — and `windowRevealDuration` is the global speed override in ms (`0`, the default, means each reveal keeps its own timing). `ai.enabled` is the per-user AI assistant toggle (opt-in, default off; enable-able only once a provider is configured in Settings → Connectors). `developerModeEnabled` (default `false`) gates developer-facing surfaces — the Starter Widget in the add-widget picker and the OpenStation Preferences → Components tab's missing-import-warner demo — set from OpenStation Preferences → Features. **Removed:** `ai.apiKey`, `ai.transport`, `ai.provider` and `ai.model` were removed — credentials live in WordPress Core's Settings → Connectors and provider + model selection is delegated to the Core AI Client. Read-only; returns a defensive copy. |
+| `getOsSettings()` | `function` | Snapshot of the persisted OpenStation Preferences state — `{ wallpaper, accent, dockSize, windowRadius, unfocusEffect, ai: { enabled } }` plus `adminBarMode` (`'static'` \| `'dynamic'` \| `'hidden'` — how the WordPress admin bar presents above the shell; emitted as a `os-admin-bar-<mode>` body class), `desktopLayout`, `dockPlacement` (`'bottom'` \| `'left'` \| `'right'` — which edge the dock sits on; read by the one-rail layouts, ignored by `classic`), `dockBehavior` (`'static'` \| `'dynamic'` — the dock always on screen, or folded into a thin indicator line at its edge and morphed back when the pointer reaches that edge; stamped as `data-os-dock-behavior` on the rail; a dynamic rail reserves no [work area](#workarea--experimental)), `sideDockBehavior` (the same choice for the `classic` layout's sidebar, its own rail on its own edge; ignored by the one-rail layouts), `dockRailRenderer`, `desktopTheme`, `appliedThemeRecommendations`, the native-window opt-ins (`nativePostsEnabled`, `nativePostsHiddenColumns`, `nativePagesEnabled`, `nativePagesHiddenColumns`, `nativeUsersEnabled`, `nativePluginsEnabled`, `nativeCommentsEnabled`, `stationHomeEnabled` — Station Home as the Dashboard, default off), `adminAssetCacheEnabled` (the service worker's shared admin-asset cache) and `windowPrewarmEnabled` (hover-intent window preloading) — both default on and are read-only mirrors of site-wide Extended options, applied on shell reload, `developerModeEnabled`, `foldersSharingEnabled`, `navPlacement`, `navOrder`, and `dockPromotedPositions` — plus `customAccent`, `customGradient`, `customImage`, `wallpaperSettings`, `libraryHdOnly`, `heartbeatRate`, `showDesktopOnWallpaperClick`, `confirmCloseAllWindows`, `mioEnabled`, `mioApiEnabled`, `mioShowOnWallpaper` and `mioStyle` — the snapshot IS the whole `OsSettingsState`; see `src/settings/types.ts` for the authoritative shape. `navPlacement` maps a nav-item id to `'rail' | 'desktop' | 'both' | 'hidden'` and `navOrder` is a flat ordering hint across every rail zone; both replaced the pre-navigation `itemVisibility` / `dockOrder` (see [migration-navigation.md](./migration-navigation.md)). `unfocusEffect` is the active unfocused-window effect id (`'darken'` default, `'none'` disables). `windowReveal` is the active window-reveal id — the clip-path transition that uncovers a window's content when it finishes loading (`'none'` by default; reveals are opt-in) — and `windowRevealDuration` is the global speed override in ms (`0`, the default, means each reveal keeps its own timing). `ai.enabled` is the per-user AI assistant toggle (opt-in, default off; enable-able only once a provider is configured in Settings → Connectors). `developerModeEnabled` (default `false`) gates developer-facing surfaces — the Starter Widget in the add-widget picker and the OpenStation Preferences → Components tab's missing-import-warner demo — set from OpenStation Preferences → Features. **Removed:** `ai.apiKey`, `ai.transport`, `ai.provider` and `ai.model` were removed — credentials live in WordPress Core's Settings → Connectors and provider + model selection is delegated to the Core AI Client. Read-only; returns a defensive copy. |
 | `subscribeOsSettings( cb )` | `function` | Subscribe to in-panel OpenStation Preferences changes (user toggles a feature in the Features tab, etc.). Returns an unsubscribe function. Fires on local edits only — cross-device changes arrive on the next page load. |
 
 ```javascript
@@ -4908,9 +4928,14 @@ if ( wp.os.isReady() ) {
 
 The desk companion. Full documentation in [mio.md](./mio.md).
 
+Window contexts can supply `responseActions({messageId, summary, operations})` for up to three app-owned read/navigation buttons on a settled reply. `MioResponseAction`, `MioResponseActionContext` and `MioResponseContext` are exported types. `MioChatMessage.id` and `actionIds` are optional opaque references; executable callbacks stay lease-local and are never sent to the provider or revived from storage. See [response buttons](mio-window-assistant.md#assistant-response-buttons) for validation, cancellation and ownership contracts.
+
 | Hook | Kind | Status | Payload |
 |---|---|---|---|
 | `os.mio.config` | filter | Experimental | `MioConfig → MioConfig` — last word on appearance + physics before mount, on top of the `openstation_mio_config` PHP filter. Re-sanitized after your filter runs, so out-of-range values are clamped rather than rejected |
+| `os.mio.window-enabled-changed` | action | Experimental | `{windowId: string, enabled: boolean}` — per-window consent changed; no matching CustomEvent |
+| `os.mio.thinking-changed` | action | Experimental | `{windowId: string, thinking: boolean}` — pending-turn activity; no conversation data or matching CustomEvent |
+| `os.mio.owner-changed` | action | Experimental | `{windowId: string \| null, previousWindowId: string \| null}` — ownership handoff between shrink and grow; no matching CustomEvent |
 | `os.mio.enabled` | action | Experimental | `{}` — the user switched it on |
 | `os.mio.disabled` | action | Experimental | `{}` — the user switched it off |
 | `os.mio.mounted` | action | Experimental | `{ position: { x, y } }` — on screen and simulating; viewport coordinates |
@@ -5683,7 +5708,7 @@ The built-in Snow wallpaper (`src/plugins/snow-wallpaper/`) is the canonical in-
 | `registerWallpaper( def )` | Stable | Add a wallpaper to the registry + re-apply |
 | `registerWidget( def )` | Stable | Add a widget to the registry |
 | `registerSystemTile( item )` | Stable | Add a JS-owned launcher tile to the bottom dock rail, alongside plugin admin menus. Returns nothing; fires `os.dock.item-appended`. See "System tiles" below. |
-| `loadVendorScript( url, extras? )` | Stable | Memoized `<script>` injector. Low-level; most plugins use `needs` instead. Never re-executes something the document already ran — pass `extras.handle` whenever you know the WP script handle, since a Core package delivered inside a `load-scripts.php` concat blob has no `<script src>` of its own to match on. |
+| `loadVendorScript( url, extras? )` | Stable | Memoized `<script>` injector. Low-level; most plugins use `needs` instead. Never re-executes something the document already ran — pass `extras.handle` whenever you know the WP script handle, since a Core package delivered inside a `load-scripts.php` concat blob has no `<script src>` of its own to match on. `extras.deps` is an ordered dependency list loaded first; an entry with an empty `url` is a src-less alias whose inline data is replayed in print order, once per document. |
 | `getWallpaperSurfaces()` | Stable | Live `WallpaperSurface[]` for collision-aware wallpapers. See "Wallpaper surfaces" below. |
 | `registerModule( def )` | Stable | Register a shared vendor library under a stable id. |
 | `loadModules( ids )` | Stable | Imperatively load registered modules. Usually unnecessary — canvas wallpapers declare `needs[]` and the shell resolves. |
@@ -8022,3 +8047,7 @@ first in-page navigation. See
 - [Examples — Window controls](./examples/window-controls.md)
 - [Examples — Window slots](./examples/window-slot.md)
 - [Examples — Custom window chrome (Experimental)](./examples/custom-chrome.md)
+
+## `os-split-change` — Stable
+
+`<os-split>` emits a bubbling, composed CustomEvent after a committed pointer or keyboard resize, with `detail: { position: number }`. Position is the start pane percentage of usable space, excluding the divider. Programmatic attributes, automatic resizing and cancelled drags emit no event. The App Framework accepts `os-on="os-split-change"` and treats it as the natural `os-split` event; actions receive `position`. The component does not persist layout. See [app layout recipes](./examples/app-layouts.md) for keyboard behavior, bounds and responsive panes.

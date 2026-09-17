@@ -2,9 +2,9 @@
 
 Canonical mapping of every shipped web component: tag name → exported class → source file → one-line purpose. The runtime missing-component warner (`src/ui/components/missing-import-warner.ts`) points readers here.
 
-Components are **side-effect registered** at import time, per bundle, into the page-global custom-element registry. The shell bundle (`desktop[.min].js`) registers a core subset and pre-loads `shell-overlays[.min].js` (the toast / confirm-dialog / context-menu / menu / select / window-chrome kit) right after first paint, so those tags upgrade anywhere once the shell is up. That is 26 of the 67 tags below. Every other component registers only when a bundle that imports its module loads — emitting a `<os-foo>` tag that no loaded bundle has imported renders inert HTML, and the missing-component warner logs a `console.error` with the exact import line to add.
+Components are **side-effect registered** at import time, per bundle, into the page-global custom-element registry. The shell bundle (`desktop[.min].js`) registers a core subset and pre-loads `shell-overlays[.min].js` (the toast / confirm-dialog / context-menu / menu / select / window-chrome kit) right after first paint, so those tags upgrade anywhere once the shell is up. The remaining tags load on demand. Every other component registers only when a bundle that imports its module loads — emitting a `<os-foo>` tag that no loaded bundle has imported renders inert HTML, and the missing-component warner logs a `console.error` with the exact import line to add.
 
-**Two ways to get the other 41.**
+**Two ways to load the remaining components.**
 
 1. **Import the module** — `import 'openstation'` (the package entry re-exports the barrel, so any import registers every tag) or a single leaf module. Right for code built inside this repo, or beside it via the `file:` dependency in [`use-from-a-plugin.md`](./use-from-a-plugin.md). The class export is only needed for TypeScript types or programmatic instantiation.
 2. **Load the kit at runtime** — `await wp.os.loadComponents( [ 'os-switch' ] )`. No build-time relationship with this repo required, which is what a plugin distributed as a zip has. See [`wp.os.loadComponents()`](./javascript-reference.md#wposloadcomponents-tags---stable) for the cost, and [`examples/load-components.md`](./examples/load-components.md) for a working panel.
@@ -34,15 +34,19 @@ The search box above the list filters on the flattened descriptor, not just the 
 | Tag | Class | Source | Purpose |
 | --- | --- | --- | --- |
 | `<os-body>` | `OsBody` | `os-body/os-body.ts` | Page-body scroll container. |
-| `<os-panel>` | `OsPanel` | `os-panel/os-panel.ts` | Collapsible content section with header. |
+| `<os-panel>` | `OsPanel` | `os-panel/os-panel.ts` | Padded vertical grouping container. |
 | `<os-section>` | `OsSection` | `os-section/os-section.ts` | Titled section block within a panel. |
-| `<os-row>` | `OsRow` | `os-row/os-row.ts` | Horizontal flex row primitive. |
+| `<os-row>` | `OsRow` | `os-row/os-row.ts` | Twelve-track grid; children declare column widths with `col`. |
 | `<os-stack>` | `OsStack` | `os-stack/os-stack.ts` | Vertical flex stack with consistent gap. |
 | `<os-cluster>` | `OsCluster` | `os-cluster/os-cluster.ts` | Wrapped flex row for chips / tags / actions. |
-| `<os-grid>` | `OsGrid` | `os-grid/os-grid.ts` | Auto-fit CSS grid primitive. |
+| `<os-app-frame>` | `OsAppFrame` | `os-app-frame/os-app-frame.ts` | Stable: persistent header, toolbar and footer around a scrolling or contained body. |
+| `<os-split>` | `OsSplit` | `os-split/os-split.ts` | Stable: responsive panes with pointer/keyboard resizing and explicit narrow-pane selection. |
+| `<os-grid>` | `OsGrid` | `os-grid/os-grid.ts` | Fixed or automatically fitting columns with child column/row spans. |
 | `<os-card>` | `OsCard` | `os-card/os-card.ts` | Bordered surface for entity-card UIs. |
 | `<os-display>` | `OsDisplay` | `os-display/os-display.ts` | Hero / display-typography container. |
 | `<os-disclosure>` | `OsDisclosure` | `os-disclosure/os-disclosure.ts` | Titled section that folds away. Closed by default. Parts: `summary`, `heading` (compact typography), `body`. |
+
+See [app layout recipes](./examples/app-layouts.md) for sizing, scrolling, spans, narrow layouts and the split event contract.
 
 ## Form controls
 
@@ -53,7 +57,7 @@ The search box above the list filters on the flattened descriptor, not just the 
 | `<os-token-field>` | `OsTokenField` | `os-token-field/os-token-field.ts` | Text / textarea whose value contains tokens (`{field:2}`, `{all_fields}`), with a grouped catalogue that inserts at the caret and a live "reads as" preview built from each token's sample. |
 | `<os-repeater>` | `OsRepeater` | `os-repeater/os-repeater.ts` | Add / remove / reorder a list of rows whose content you supply. Keyed by stable strings, so a remove or move never rebuilds the rows that didn't change. Reports intent; the consumer owns the data. |
 | `<os-text-field>` | `OsTextField` | `os-text-field/os-text-field.ts` | Single-line text input. |
-| `<os-textarea>` | `OsTextarea` | `os-textarea/os-textarea.ts` | Multi-line text input. |
+| `<os-textarea>` | `OsTextarea` | `os-textarea/os-textarea.ts` | Multi-line text input. `auto-grow` expands to `max-rows`, including the border, then scrolls vertically; Enter submission respects IME composition. |
 | `<os-number-field>` | `OsNumberField` | `os-number-field/os-number-field.ts` | Numeric input with min/max/step. |
 | `<os-color-field>` | `OsColorField` | `os-color-field/os-color-field.ts` | Color picker with swatches. |
 | `<os-range-field>` | `OsRangeField` | `os-range-field/os-range-field.ts` | Slider with live numeric readout. |
@@ -175,6 +179,8 @@ in the value, or on `beforeinput`, where it can still be refused.
 | --- | --- | --- | --- |
 | `<os-button>` | `OsButton` | `os-button/os-button.ts` | Primary / secondary / ghost button. |
 | `<os-window-button>` | `OsWindowButton` | `os-window-button/os-window-button.ts` | Title-bar icon button (minimize / maximize / close / custom). |
+
+`<os-window-button disabled>` forwards disabled state to its native button, preventing activation and keyboard focus. Optional `aria-pressed="true|false|mixed"` is forwarded to that same focusable button; `active` controls its visual pressed state.
 
 `<os-window-button>` paints an `aria-hidden` glyph inside a shadow
 `<button>`, so it has no accessible name of its own — **always set

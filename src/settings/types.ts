@@ -72,7 +72,7 @@ export interface AiAssistantConfig {
 	available: boolean;
 	/**
 	 * Baseline: a text-generation provider is configured in Settings →
-	 * Connectors. Comment scoring (text output only) gates on this.
+	 * Connectors. Features that need text output only gate on this.
 	 */
 	providerConfigured: boolean;
 	/**
@@ -349,6 +349,10 @@ export interface OsSettingsState {
 	 * time it flips true. Off by default. See `docs/mio.md`.
 	 */
 	mioEnabled: boolean;
+	/** Compatibility alias for the MIO master switch (mioEnabled). */
+	mioApiEnabled: boolean;
+	/** Show the enabled companion on wallpaper, independently of window invitations. */
+	mioShowOnWallpaper: boolean;
 	/**
 	 * The user's own Mio, as built in "Make it yours" — colours, ring,
 	 * glow, hologram, and silhouette. Only the keys they actually

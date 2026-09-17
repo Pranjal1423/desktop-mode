@@ -48,6 +48,7 @@ If you are **building a plugin** that interacts with the desktop shell — opens
 38. **[Mobile — the phone layer](./mobile.md)** — *Experimental.* `wp.os.mode` (`desktop | tablet | mobile`) and what the shell does when it says `mobile`: a home screen of the same navigation items, one full-screen window at a time under a slim top bar, a swipeable app switcher, a five-slot tab bar, an edge-swipe Back — and a session that a phone visit never rearranges. Covers the `data-os-mode` CSS hook, the head stamp that makes the first paint right, the `os.session.snapshot` filter, and what a phone does and does not pay for. See also [examples/mobile-tab-bar.md](./examples/mobile-tab-bar.md).
 39. **[OpenStation Network](./network.md)** — *Experimental.* Separate installs, each with OpenStation, showing one site switcher: a hub keeps the list, every install publishes an Ed25519 key that its peers pin when pairing, members fetch the list with signed requests, a switch to another install logs the user in there through a signed hop token, and the Network app is the one-time admin task behind it. Read for the trust model before touching anything cross-install.
 
+- **[AI comment scoring leaves core](./migration-comments-ai-scoring.md)** — the "Score new comments with AI" toggle, its option, its REST route and its two filters are gone; the spam-score filter, the on-demand analyze ability and the comment meta are unchanged. Read if you gated, toggled or read that feature.
 - **[Performance settings migration](./migration-performance-options.md)** — preloading and shared caching become site-wide opt-outs; runtime snapshot fields remain readable.
 
 - **[Presence storage migration](./migration-presence-storage.md)** — atomic per-user storage, deployment bridge, failure recovery and rollback.
@@ -65,3 +66,11 @@ If you are **building a plugin** that interacts with the desktop shell — opens
 ## Reporting breakage
 
 If a documented hook behaves differently than what's written here, that is a bug in either the code or the docs. Open an issue or PR. Do not work around it silently — the docs are source of truth for plugin authors.
+
+- **[Window-scoped MIO](./mio-window-assistant.md)** — Experimental. Opt-in residency, linked Markdown help, private chainable actions and memory-only themed chat. [Preferences help example](../apps/os-settings/help/index.md).
+
+- [Repairable form edits with MIO](examples/mio-form-editing.md) — Experimental: structured validation, revisioned operations, status reconciliation, large-document history and receipt-bound Preview buttons.
+
+## App layout containers
+
+[App layout recipes](./examples/app-layouts.md) — **Stable** app frame, resizable split panes, and responsive grid/span extensions. Includes dashboard, settings, list/detail and editor/preview examples.

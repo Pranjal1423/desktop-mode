@@ -46,6 +46,7 @@ defined( 'ABSPATH' ) || exit;
 - [Register a wallpaper (CSS + canvas)](./register-wallpaper.md)
 - [Register a game — launcher tile, scoreboard, challenges (Experimental)](./register-game.md)
 - [Restyle and drive Mio (Experimental)](./mio-customization.md)
+- [Register a window companion (Experimental)](./mio-window-assistant.md)
 - [Register a widget — polling, storage, canvas charts](./register-widget.md)
 - [Add an opt-in card to Station Home](./station-home-card.md)
 - [Register a desktop icon (Jorvy)](./register-icon.md)
@@ -58,6 +59,7 @@ defined( 'ABSPATH' ) || exit;
 - [Iframe-initiated window opens — open/talk to a sibling window from inside a chromeless iframe](./iframe-initiated-window.md)
 - [Native window with tabs (auto-swap pattern)](./native-window-with-tabs.md)
 - [Use `<os-*>` components from a plugin that ships as a zip](./load-components.md)
+- [App layouts: dashboard grids, scrolling settings, list/detail and editor/preview](./app-layouts.md) — Stable
 - [Layout primitives (body → panel → row → col)](./layout-primitives.md)
 - [`<os-flyout>` — sliding edge-anchored panel](./os-flyout.md)
 - [Render a data table — filters, sticky columns, sub-tables](./data-table.md)
@@ -93,3 +95,5 @@ defined( 'ABSPATH' ) || exit;
 - [Observe safely aborted stored-file cleanup](./storage-cleanup-diagnostics.md)
 
 If your use case isn't here, check [Hooks Reference](../hooks-reference.md) and [JavaScript Reference](../javascript-reference.md) — everything we fire is documented there.
+
+- [Repairable form edits with MIO](mio-form-editing.md) — Experimental: structured validation, revisioned operations, status reconciliation, large-document history and receipt-bound Preview buttons.
