@@ -1018,7 +1018,14 @@
  * pill wider. `justify-content: safe center` keeps tiles balanced inside
  * the pill when content fits; when it overflows, the `safe` keyword
  * ensures alignment falls back to `start` so `scrollLeft = 0` reveals the
- * first item and all items remain scrollable without clipping.
+ * first item and all items remain scrollable without clipping. Bare
+ * `center` put the leading tiles at a negative offset, and a scroll
+ * container clamps `scrollLeft` at 0, so Dashboard and its neighbours
+ * were clipped with no way to scroll back to them. **The plain `start`
+ * above it is the fallback, not a leftover** — a browser that cannot
+ * parse the overflow-alignment keyword drops the `safe center`
+ * declaration and keeps that one, which left-aligns the tiles rather
+ * than hiding them. Deleting it restores the bug on those browsers.
  */
 .os-dock[ data-os-dock-placement="bottom" ] .os-dock__scroll {
 	display: flex;
