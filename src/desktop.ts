@@ -819,7 +819,10 @@ export interface OpenStationPublicApi {
 	 * not an app, or one warmed a moment ago (a warm stays good for
 	 * ~30 s, and is taken once).
 	 */
-	prewarmWindow: ( id: string ) => Promise< boolean >;
+	prewarmWindow: (
+		id: string,
+		opts?: { params?: Record< string, string | number | boolean > },
+	) => Promise< boolean >;
 	/**
 	 * Make `<os-*>` tags upgrade, fetching the component kit if the
 	 * page doesn't already have them.
@@ -2314,6 +2317,7 @@ function init(): void {
 		wallpaperLayer ?? new WallpaperLayer( document.createElement( 'div' ), pluginUrl ),
 	);
 	osSettings.apply();
+	osSettings.applyWidgets = ( ids ) => widgetLayer?.setEnabledIds( ids );
 
 	// Read the current preference whenever a user opens a window.
 	manager.openWindowsAs = () => osSettings.state.openWindowsAs;
