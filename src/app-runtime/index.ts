@@ -102,9 +102,16 @@ export function buildHost( ownerWindowId: string ): RuntimeHost {
 			} );
 		},
 		toast: ( options ) => {
-			api?.showToast(
-				options.duration ? { message: options.message, duration: options.duration } : { message: options.message },
-			);
+			const toast: { message: string; duration?: number; type?: string } = {
+				message: options.message,
+			};
+			if ( options.duration ) {
+				toast.duration = options.duration;
+			}
+			if ( options.type ) {
+				toast.type = options.type;
+			}
+			api?.showToast( toast );
 		},
 		setTitle: ( windowId, title ) => {
 			api?.windowManager.getById( windowId )?.setTitle( title );
@@ -563,13 +570,13 @@ os()?.registerNamespace( 'apps', {
 	 * already warm; see `wp.os.prewarmWindow( id )` for the door the
 	 * shell uses (it loads the bundles first).
 	 */
-	prewarm: ( id: string ) => {
+	prewarm: ( id: string, params: Record< string, string | number | boolean > = {} ) => {
 		const config = ( window as unknown as RuntimeGlobals ).openStationWindowConfig?.[ id ] as
 			| Partial< AppConfig >
 			| undefined;
 		if ( ! config || config.osApp !== true || sessions.has( id ) ) {
 			return false;
 		}
-		return startPrewarm( config as AppConfig, buildHost( id ).fetch );
+		return startPrewarm( config as AppConfig, buildHost( id ).fetch, params );
 	},
 } );

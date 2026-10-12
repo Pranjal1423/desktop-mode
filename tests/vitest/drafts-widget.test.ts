@@ -173,7 +173,7 @@ describe( 'drafts widget — REST query', () => {
 		expect( listRequestUrl() ).not.toContain( 'author=' );
 	} );
 
-	test( 'polls without pulsing the activity bus', async () => {
+	test( 'polls silently, tagged with its source', async () => {
 		installShell();
 		teardown = await getMount()( container, makeCtx() );
 
@@ -264,8 +264,10 @@ describe( 'drafts widget — rendering', () => {
 		installShell( { ok: false } );
 		teardown = await getMount()( container, makeCtx() );
 
-		expect( container.querySelector( '.dm-drafts__empty' )?.textContent ).toBe(
-			'Could not load drafts.',
+		// The widget's own line, then what the server did: a 5xx has no
+		// message worth showing, so the status is named instead.
+		expect( container.querySelector( '.dm-drafts__empty' )?.textContent ).toMatch(
+			/^Could not load drafts\. The server answered with error \d+\.$/,
 		);
 	} );
 } );
@@ -559,7 +561,7 @@ describe( 'drafts widget — AI writing assistant', () => {
 
 		await vi.waitFor( () => {
 			expect( desktop.showToast ).toHaveBeenCalledWith( {
-				message: 'Could not apply the suggestion.',
+				message: expect.stringMatching( /^Could not apply the suggestion\./ ),
 				type: 'error',
 			} );
 		} );
@@ -771,6 +773,46 @@ describe( 'drafts widget — accessible names', () => {
 	} );
 } );
 
+describe( 'drafts widget — content-change refresh', () => {
+	function listFetches(): number {
+		return desktop.fetch.mock.calls.filter( ( c ) =>
+			String( c[ 0 ] ).includes( '/wp/v2/posts?' ),
+		).length;
+	}
+
+	function announce( topic: string ): void {
+		document.dispatchEvent(
+			new CustomEvent( 'os-broadcast', {
+				detail: { topic, payload: { source: 'editor', action: 'created', ids: [ 9 ] } },
+			} ),
+		);
+	}
+
+	// A draft saved in an editor window that keeps focus fires no window
+	// lifecycle event: the save broadcast is the only prompt there is.
+	test( 'a post change broadcast refreshes the list', async () => {
+		installShell();
+		teardown = await getMount()( container, makeCtx() );
+		const before = listFetches();
+
+		announce( 'os.post.changed' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 700 ) );
+
+		expect( listFetches() ).toBe( before + 1 );
+	} );
+
+	test( 'other content types leave the list alone', async () => {
+		installShell();
+		teardown = await getMount()( container, makeCtx() );
+		const before = listFetches();
+
+		announce( 'os.page.changed' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 700 ) );
+
+		expect( listFetches() ).toBe( before );
+	} );
+} );
+
 describe( 'drafts widget — teardown', () => {
 	test( 'detaches its window-lifecycle listeners', async () => {
 		installShell();
@@ -783,5 +825,6 @@ describe( 'drafts widget — teardown', () => {
 		const events = remove.mock.calls.map( ( c ) => c[ 0 ] );
 		expect( events ).toContain( 'os-window-closed' );
 		expect( events ).toContain( 'os-window-blurred' );
+		expect( events ).toContain( 'os-broadcast' );
 	} );
 } );
