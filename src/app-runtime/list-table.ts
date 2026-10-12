@@ -8,13 +8,17 @@
  * position. Every list window then does the same things on every
  * paint — a card list on a phone (and the columns built for it), the
  * one-time wiring, and the rows assigned only when they actually changed.
+ * The selection is left alone: `<os-table>` keys it by row id, so rows
+ * picked under one search or filter stay picked under the next and a
+ * bulk action acts on all of them. Whoever runs a bulk action clears
+ * the selection afterwards.
  *
  * Usage, in a client view:
  *
  *   // in the ui bag:   table: createListTableSync< Row >(),
  *   // in updated():    ui.table.sync( {
  *   //     table: ctx.root.querySelector( '[data-my-table]' ),
- *   //     rows, listKey: `${ state.page }|${ state.search }`,
+ *   //     rows,
  *   //     fingerprint: rows.map( ( r ) => `${ r.id }:${ r.modified }` ).join( '|' ),
  *   //     columns: ( phone ) => buildColumns( phone ),
  *   //     wire: ( table ) => { table.sort = …; table.addEventListener( … ); },
@@ -39,17 +43,17 @@ export interface ListTableSyncOptions< Row > {
 	table: ListTableLike< Row > | null;
 	/** The rows to show. */
 	rows: Row[];
-	/** The query's identity (page, search, filters, sort): a change clears the selection. */
-	listKey: string;
+	/** @deprecated No longer read: the selection survives query changes. Kept for compatibility. */
+	listKey?: string;
 	/** Change detection for `rows`: an unchanged key skips the `data` assignment. */
 	fingerprint: string;
 	/** The columns for a desk (`false`) or a phone (`true`); rebuilt when the answer changes or after `invalidateColumns()`. */
 	columns: ( phone: boolean ) => unknown;
 	/** One-time wiring: `getRowId`, the default sort, listeners. */
 	wire?: ( table: ListTableLike< Row > ) => void;
-	/** Row identity, matching the table's `getRowId`. Default `row.id`. */
+	/** @deprecated No longer read. Kept for compatibility. */
 	rowId?: ( row: Row ) => string | number;
-	/** The selection was pruned to the visible rows (or cleared); `kept` is what survived. */
+	/** Called after the rows are reassigned, with the current selection (including rows no longer loaded). */
 	onSelection?: ( kept: string[] ) => void;
 }
 
@@ -57,11 +61,12 @@ export interface ListTableSyncResult {
 	phone: boolean;
 	columnsChanged: boolean;
 	dataChanged: boolean;
+	/** @deprecated Always `false`: the sync no longer touches the selection. Kept for compatibility. */
 	selectionChanged: boolean;
 }
 
 export interface ListTableSync< Row > {
-	/** Run the four steps against the current paint. */
+	/** Bring the table in step with the current paint. */
 	sync( opts: ListTableSyncOptions< Row > ): ListTableSyncResult;
 	/** Rebuild the columns on the next `sync()` (a hidden-columns change, fresh filter options). */
 	invalidateColumns(): void;
@@ -76,7 +81,6 @@ function selectionKeys( table: ListTableLike< unknown > ): string[] {
 export function createListTableSync< Row >(): ListTableSync< Row > {
 	let phoneColumns: boolean | null = null;
 	let wired = false;
-	let listKey: string | null = null;
 	let fingerprint: string | null = null;
 
 	return {
@@ -111,10 +115,6 @@ export function createListTableSync< Row >(): ListTableSync< Row > {
 			if ( ! wired ) {
 				wired = true;
 				opts.wire?.( table );
-			}
-
-			if ( opts.listKey !== listKey ) {
-				listKey = opts.listKey;
 			}
 
 			// Assign the rows only when they changed, so a selection or
