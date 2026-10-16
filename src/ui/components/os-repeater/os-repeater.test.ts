@@ -360,4 +360,22 @@ describe( '<os-repeater>', () => {
 				.getAttribute( 'aria-label' ),
 		).toBe( 'Remove Draft Title (1 of 3)' );
 	} );
+
+	test( 'renames the row buttons when a row label changes from code', async () => {
+		const el = await mount( 'row-label="choice"', '<div slot="row-a" data-label="Draft"></div>' );
+		const removeLabel = (): string | null =>
+			rows( el )[ 0 ]
+				.querySelector( '.os-repeater__remove' )!
+				.getAttribute( 'aria-label' );
+		expect( removeLabel() ).toBe( 'Remove Draft (1 of 3)' );
+
+		// Neither write fires `input`, and `keys` does not change.
+		el.querySelector( '[slot="row-a"]' )!.setAttribute( 'data-label', 'Published' );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		expect( removeLabel() ).toBe( 'Remove Published (1 of 3)' );
+
+		el.querySelector( '[slot="row-a"]' )!.remove();
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		expect( removeLabel() ).toBe( 'Remove choice 1 of 3' );
+	} );
 } );
