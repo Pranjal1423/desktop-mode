@@ -238,8 +238,8 @@ describe( '<os-repeater>', () => {
 				r.querySelector( '.os-repeater__remove' )!.getAttribute( 'aria-label' ),
 		);
 		expect( removeLabels ).toEqual( [
-			'Remove First Choice',
-			'Remove Second Choice',
+			'Remove First Choice (1 of 3)',
+			'Remove Second Choice (2 of 3)',
 			'Remove choice 3 of 3', // falls back to position when empty
 		] );
 
@@ -249,8 +249,8 @@ describe( '<os-repeater>', () => {
 			),
 		);
 		expect( moveLabels[ 0 ] ).toEqual( [
-			'Move First Choice up',
-			'Move First Choice down',
+			'Move First Choice (1 of 3) up',
+			'Move First Choice (1 of 3) down',
 		] );
 	} );
 
@@ -268,7 +268,7 @@ describe( '<os-repeater>', () => {
 			rows( el )[ 0 ]
 				.querySelector( '.os-repeater__remove' )!
 				.getAttribute( 'aria-label' ),
-		).toBe( 'Remove Drafting' );
+		).toBe( 'Remove Drafting (1 of 3)' );
 		expect(
 			rows( el )[ 1 ]
 				.querySelector( '.os-repeater__remove' )!
@@ -286,7 +286,7 @@ describe( '<os-repeater>', () => {
 			rows( el )[ 0 ]
 				.querySelector( '.os-repeater__remove' )!
 				.getAttribute( 'aria-label' ),
-		).toBe( 'Remove Draft' );
+		).toBe( 'Remove Draft (1 of 3)' );
 
 		const input = el.querySelector( 'input' )!;
 		input.value = 'Published';
@@ -297,6 +297,67 @@ describe( '<os-repeater>', () => {
 			rows( el )[ 0 ]
 				.querySelector( '.os-repeater__remove' )!
 				.getAttribute( 'aria-label' ),
-		).toBe( 'Remove Published' );
+		).toBe( 'Remove Published (1 of 3)' );
+	} );
+
+	test( 'handles WordPress bracketed field names and numeric keys without throwing', async () => {
+		host.innerHTML = `
+			<os-repeater row-label="field" row-label-from="items[0][title]">
+				<div slot="row-0"><input name="items[0][title]" value="Option Zero" /></div>
+				<div slot="row-1:special"><input name="items[0][title]" value="Option One" /></div>
+			</os-repeater>
+		`;
+		const el = host.querySelector( 'os-repeater' ) as OsRepeater;
+		el.keys = [ '0', '1:special' ];
+		await tick();
+
+		const removeButtons = rows( el ).map( ( r ) =>
+			r.querySelector( '.os-repeater__remove' )!.getAttribute( 'aria-label' ),
+		);
+		expect( removeButtons ).toEqual( [
+			'Remove Option Zero (1 of 2)',
+			'Remove Option One (2 of 2)',
+		] );
+	} );
+
+	test( 'scoped lookup ignores slotted rows in nested repeaters', async () => {
+		host.innerHTML = `
+			<os-repeater id="outer" row-label="outer" row-label-from="title">
+				<div slot="row-a">
+					<input name="title" value="Outer A" />
+					<os-repeater id="inner" row-label="inner" row-label-from="title">
+						<div slot="row-b"><input name="title" value="Inner B" /></div>
+					</os-repeater>
+				</div>
+			</os-repeater>
+		`;
+		const outer = host.querySelector( '#outer' ) as OsRepeater;
+		const inner = host.querySelector( '#inner' ) as OsRepeater;
+		outer.keys = [ 'a' ];
+		inner.keys = [ 'b' ];
+		await tick();
+
+		const outerRemove = rows( outer )[ 0 ]
+			.querySelector( '.os-repeater__remove' )!
+			.getAttribute( 'aria-label' );
+		const innerRemove = rows( inner )[ 0 ]
+			.querySelector( '.os-repeater__remove' )!
+			.getAttribute( 'aria-label' );
+
+		expect( outerRemove ).toBe( 'Remove Outer A (1 of 1)' );
+		expect( innerRemove ).toBe( 'Remove Inner B (1 of 1)' );
+	} );
+
+	test( 'collapses excess whitespace in extracted labels', async () => {
+		const el = await mount(
+			'row-label="choice"',
+			'<div slot="row-a" data-label="   Draft   Title   \n\t "></div>',
+		);
+
+		expect(
+			rows( el )[ 0 ]
+				.querySelector( '.os-repeater__remove' )!
+				.getAttribute( 'aria-label' ),
+		).toBe( 'Remove Draft Title (1 of 3)' );
 	} );
 } );

@@ -48,6 +48,47 @@ import { Component, defineComponent, html } from '../../core';
 import { styles } from './os-repeater.styles';
 import '../os-button/os-button';
 import '../os-icon/os-icon';
+import { __, sprintf } from '../../../i18n';
+
+function escapeCss( value: string ): string {
+	if ( typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ) {
+		return CSS.escape( value );
+	}
+	const string = String( value );
+	const length = string.length;
+	let index = -1;
+	let result = '';
+	const firstCodeUnit = string.charCodeAt( 0 );
+
+	while ( ++index < length ) {
+		const codeUnit = string.charCodeAt( index );
+		if (
+			( codeUnit >= 0x0001 && codeUnit <= 0x001f ) ||
+			codeUnit === 0x007f ||
+			( index === 0 && codeUnit >= 0x0030 && codeUnit <= 0x0039 ) ||
+			( index === 1 &&
+				codeUnit >= 0x0030 &&
+				codeUnit <= 0x0039 &&
+				firstCodeUnit === 0x002d )
+		) {
+			result += '\\' + codeUnit.toString( 16 ) + ' ';
+			continue;
+		}
+		if (
+			codeUnit >= 0x0080 ||
+			codeUnit === 0x002d ||
+			codeUnit === 0x005f ||
+			( codeUnit >= 0x0030 && codeUnit <= 0x0039 ) ||
+			( codeUnit >= 0x0041 && codeUnit <= 0x005a ) ||
+			( codeUnit >= 0x0061 && codeUnit <= 0x007a )
+		) {
+			result += string.charAt( index );
+			continue;
+		}
+		result += '\\' + string.charAt( index );
+	}
+	return result;
+}
 
 export class OsRepeater extends Component {
 	static props = [
@@ -96,7 +137,7 @@ export class OsRepeater extends Component {
 				name: 'row-label-from',
 				type: 'string',
 				description:
-					'Name, id, or data-field of a child input in each row whose value labels the row buttons ("Remove Drafting").',
+					'Name, id, or data-field of a child input in each row whose value labels the row buttons ("Remove Drafting (1 of 3)").',
 			},
 			{
 				name: 'reorderable',
@@ -125,7 +166,8 @@ export class OsRepeater extends Component {
 		slots: [
 			{
 				name: 'row-<key>',
-				description: 'One per entry in `keys` — the row content.',
+				description:
+					'One per entry in `keys` — the row content. May carry `data-label="..."` or `aria-label="..."` to label the row controls.',
 			},
 			{
 				name: 'empty',
@@ -281,16 +323,19 @@ export class OsRepeater extends Component {
 		rowLabelFrom: string,
 	): { remove: string; moveUp: string; moveDown: string } {
 		let label = '';
-		const rowSlot = this.querySelector( `[slot="row-${ key }"]` );
+		const rowSlot = this.querySelector(
+			`:scope > [slot="row-${ escapeCss( key ) }"]`,
+		);
 		if ( rowSlot ) {
 			const explicit =
 				rowSlot.getAttribute( 'data-label' ) ||
 				rowSlot.getAttribute( 'aria-label' );
 			if ( explicit && explicit.trim() ) {
-				label = explicit.trim();
+				label = explicit.replace( /\s+/g, ' ' ).trim();
 			} else if ( rowLabelFrom ) {
+				const name = escapeCss( rowLabelFrom );
 				const field = rowSlot.querySelector(
-					`[name="${ rowLabelFrom }"], [data-field="${ rowLabelFrom }"], #${ rowLabelFrom }`,
+					`[name="${ name }"], [data-field="${ name }"], #${ name }`,
 				);
 				if ( field ) {
 					const val =
@@ -299,7 +344,7 @@ export class OsRepeater extends Component {
 							? ( field as HTMLInputElement ).value
 							: field.textContent;
 					if ( val && val.trim() ) {
-						label = val.trim();
+						label = val.replace( /\s+/g, ' ' ).trim();
 					}
 				}
 			}
@@ -310,16 +355,50 @@ export class OsRepeater extends Component {
 				label = label.slice( 0, 47 ) + '…';
 			}
 			return {
-				remove: `Remove ${ label }`,
-				moveUp: `Move ${ label } up`,
-				moveDown: `Move ${ label } down`,
+				remove: sprintf(
+					/* translators: 1: row label, 2: row position, 3: total rows. */
+					__( 'Remove %1$s (%2$d of %3$d)' ),
+					label,
+					pos,
+					total,
+				),
+				moveUp: sprintf(
+					/* translators: 1: row label, 2: row position, 3: total rows. */
+					__( 'Move %1$s (%2$d of %3$d) up' ),
+					label,
+					pos,
+					total,
+				),
+				moveDown: sprintf(
+					/* translators: 1: row label, 2: row position, 3: total rows. */
+					__( 'Move %1$s (%2$d of %3$d) down' ),
+					label,
+					pos,
+					total,
+				),
 			};
 		}
 
 		return {
-			remove: `Remove ${ rowLabel } ${ pos } of ${ total }`,
-			moveUp: `Move ${ rowLabel } ${ pos } up`,
-			moveDown: `Move ${ rowLabel } ${ pos } down`,
+			remove: sprintf(
+				/* translators: 1: row label, 2: row position, 3: total rows. */
+				__( 'Remove %1$s %2$d of %3$d' ),
+				rowLabel,
+				pos,
+				total,
+			),
+			moveUp: sprintf(
+				/* translators: 1: row label, 2: row position. */
+				__( 'Move %1$s %2$d up' ),
+				rowLabel,
+				pos,
+			),
+			moveDown: sprintf(
+				/* translators: 1: row label, 2: row position. */
+				__( 'Move %1$s %2$d down' ),
+				rowLabel,
+				pos,
+			),
 		};
 	}
 
