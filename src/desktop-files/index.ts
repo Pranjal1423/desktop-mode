@@ -5,11 +5,10 @@
  * file types and the ten built-in openers with their respective
  * registries, then exposes the public API on `wp.os.files`.
  *
- * Higher phases extend this module with the REST/store layer
- * (Phase 2), the `FilesLayer` renderer (Phase 3), the wallpaper
- * context menu (Phase 4), the file-associations settings tab
- * (Phase 5), folder sharing + Heartbeat sync (Phase 6), and the
- * Recycle-Bin drop integration (Phase 7).
+ * Sibling modules build on it with the REST/store layer, the
+ * `FilesLayer` renderer, the wallpaper context menu, the
+ * file-associations settings tab, folder sharing + Heartbeat sync,
+ * and the Recycle-Bin drop integration.
  */
 
 import { DefaultDesktopFile, DesktopFile } from './file';
@@ -45,6 +44,7 @@ import { installShareMenuItems } from './share-menu-items';
 import { installShareInviteBanner } from './share-invite-banner';
 import { installUploadMenuItems } from './upload-menu-items';
 import { installMediaMenuItems } from './media-menu-items';
+import { installAgentMenuItems } from './agent-menu-items';
 import { installMediaDrag } from './media-drag';
 import { installMediaDropTargets } from './media-drop-targets';
 import { ingestPendingInvites, type PendingInvite } from './shares-store';
@@ -74,6 +74,7 @@ seedBootFolders();
 installShareMenuItems();
 installUploadMenuItems();
 installMediaMenuItems();
+installAgentMenuItems();
 installMediaDrag();
 installMediaDropTargets();
 // Hydrate the shares store from the shell config snapshot BEFORE the

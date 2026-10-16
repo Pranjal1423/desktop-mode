@@ -17,7 +17,7 @@ import { __, sprintf } from '../i18n';
 // connected to the document. Custom-element registrations are
 // idempotent, so importing here is safe even if a downstream entry
 // imported the spinner first.
-// Pre-registered globally by the lazy shell-overlays bundle (Stage 10) — see src/shell-overlays/entry.ts.
+// Pre-registered globally by the lazy shell-overlays bundle — see src/shell-overlays/entry.ts.
 import {
 	markWindowContentLoading,
 	markWindowContentReady,
@@ -30,6 +30,8 @@ import {
 	LOADING_OVERLAY_CLASS,
 	LOADING_OVERLAY_SHOW_DELAY_MS,
 	LOADING_OVERLAY_VISIBLE_CLASS,
+	LOADING_SPINNER_PRESET,
+	LOADING_SPINNER_SIZE,
 } from './constants';
 
 /**
@@ -259,8 +261,8 @@ function buildDefaultLoadingOverlay(): HTMLElement {
 	// the right tone for a window that's still loading. Plugins
 	// that prefer a more lively look can swap the preset via the
 	// `WINDOW_LOADING_OVERLAY` filter.
-	spinner.setAttribute( 'preset', 'classic' );
-	spinner.setAttribute( 'size', 'clamp(96px, 14vw, 192px)' );
+	spinner.setAttribute( 'preset', LOADING_SPINNER_PRESET );
+	spinner.setAttribute( 'size', LOADING_SPINNER_SIZE );
 	spinner.setAttribute( 'label', __( 'Loading window content' ) );
 	overlay.appendChild( spinner );
 	return overlay;
@@ -559,6 +561,9 @@ export function createWindowElement( config: WindowConfig ): HTMLElement {
 	//   - Open another <Page>      — only when `config.multi`.
 	//   - Open in new window       — opens the current iframe URL as a
 	//                                fresh sibling.
+	//   - Copy link                — copies a shareable URL of the page.
+	//                                Hidden on a native window with no
+	//                                page to share.
 	//   - Reload                   — reloads the iframe, or re-runs the
 	//                                render callback of a native window.
 	//   - Open in classic wp-admin — detach to a classic admin tab.
@@ -627,6 +632,20 @@ export function createWindowElement( config: WindowConfig ): HTMLElement {
 		openInNew.textContent = __( 'Open in new window' );
 		menuPanel.appendChild( openInNew );
 	}
+
+	// "Copy link" — the page's own wp-admin address, cleaned of the
+	// shell's flags (see `share-link.ts`), so whoever opens it lands on
+	// the same screen. Built for every window: a native one shares the
+	// admin page embedded in it or the screen its tab stands for, and
+	// the menu hides the row on open when there is neither.
+	const copyLink = document.createElement( 'os-menu-item' );
+	copyLink.setAttribute( 'role', 'menuitem' );
+	copyLink.setAttribute( 'value', 'copy-link' );
+	copyLink.setAttribute( 'icon', 'dashicons-admin-links' );
+	copyLink.classList.add( 'os-window__menu-item' );
+	copyLink.classList.add( 'os-window__menu-item--copy-link' );
+	copyLink.textContent = __( 'Copy link' );
+	menuPanel.appendChild( copyLink );
 
 	// "Reload" — was a built-in title-bar control. Moved here because
 	// it's an infrequent action that didn't earn the permanent real

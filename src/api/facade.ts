@@ -5,8 +5,7 @@
  * be assembled inline inside `init()` as a single ~280-LOC object
  * literal. Plugin authors who wanted to know "what's available on
  * `wp.os`?" had to scroll through `desktop.ts` looking for
- * the literal. Phase 5 of the architecture-0.8.1 boot
- * decomposition pulls the literal out: `init()` builds a
+ * the literal. Now `init()` builds a
  * dependency bag and calls `buildPublicApi(deps)`; this module
  * owns the literal, the reserved-namespace allowlist, and the
  * merge-onto-shim assignment.
@@ -52,6 +51,7 @@ import { startOAuth } from '../oauth-relay';
 import {
 	cloneTemplate,
 	onWindow,
+	windowScriptData,
 } from '../native-windows';
 import { repaintLoadingOverlays } from '../window/loading';
 import { loadModules, registerModule } from '../modules/registry';
@@ -287,7 +287,10 @@ export interface BuildPublicApiDeps {
 		},
 	) => boolean;
 	loadWindowScriptById: ( id: string ) => Promise< boolean >;
-	prewarmWindowById: ( id: string ) => Promise< boolean >;
+	prewarmWindowById: (
+		id: string,
+		opts?: { params?: Record< string, string | number | boolean > },
+	) => Promise< boolean >;
 	placeSystemTile: ( item: SystemDockItem ) => void;
 	setDefaultWindow: ( url: string | null ) => Promise< void >;
 	refreshMenu: () => Promise< void >;
@@ -684,7 +687,7 @@ export function buildPublicApi( deps: BuildPublicApiDeps ): OpenStationPublicApi
 				const url =
 					entry.scriptUrl ||
 					( entry.scriptHandle
-						? config.nativeWindowScriptData?.[ entry.scriptHandle ]
+						? windowScriptData( config )?.[ entry.scriptHandle ]
 							?.url ?? ''
 						: '' );
 				let loadPath: 'eager' | 'lazy' | 'unknown' = 'unknown';

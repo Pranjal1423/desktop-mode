@@ -83,7 +83,8 @@ import { destroyDesktopNameHud } from './desktop-name-hud';
 import { cancelOverviewTimers, enterOverview, exitOverview } from './overview';
 import { loadNativeWindowGeometry } from './native-window-geometry';
 import { clampWindowPosition } from '../window/pointer';
-import { subscribeWorkArea, workAreaRectOf, type WorkAreaRect } from '../work-area';
+import { focusIsFromUser } from '../window/focus-intent';
+import { getReservedInsets, placementRectOf, subscribeWorkArea, workAreaRectOf, type WorkAreaRect } from '../work-area';
 
 /** Base z-index for desktop windows. */
 const BASE_Z_INDEX = 100;
@@ -479,6 +480,18 @@ export class WindowManager {
 				if ( ! win ) {
 					return;
 				}
+				// Focus a page took on its own while loading (an editor
+				// focusing its empty title) is not the user choosing
+				// this window; see `src/window/focus-intent.ts`. It
+				// stays where it is, and the keyboard is taken back
+				// from a window behind the focused one, so typing
+				// cannot land in a page the user is not looking at.
+				if ( ! focusIsFromUser() ) {
+					if ( this.getFocused() !== win ) {
+						( active as HTMLElement ).blur();
+					}
+					return;
+				}
 				// Skip while overview is active — pointer events are
 				// driven by the dedicated overview capture handler
 				// there.
@@ -559,13 +572,10 @@ export class WindowManager {
 				const currentY = parseInt( w.element.style.top, 10 ) || 0;
 				const width = w.element.offsetWidth || 0;
 
-				// Manual placement still uses the whole desktop.
-				const safe = clampWindowPosition( currentX, currentY, width, {
-					x: 0,
-					y: 0,
-					width: parent.clientWidth,
-					height: parent.clientHeight,
-				} );
+				// Manual placement still uses the whole desktop, less
+				// any reserved band: one reserved after the window was
+				// placed pushes it out.
+				const safe = clampWindowPosition( currentX, currentY, width, placementRectOf( parent ) );
 
 				if ( currentX !== safe.x || currentY !== safe.y ) {
 					w.element.classList.add( 'os-window--reflowing' );
@@ -1177,7 +1187,10 @@ export class WindowManager {
 		// and height to the registered minima — a buggy filter cannot
 		// ship a sub-minimum window. Position is NOT re-clamped:
 		// plugins sometimes deliberately place windows partially
-		// off-screen for stylistic reasons.
+		// off-screen for stylistic reasons — except into a reserved
+		// band (`reserveWorkArea()`), which nothing may cover, pinned
+		// or not: a native window defaulting to 0,0 would otherwise
+		// open with its title bar under the band.
 		const coalesce = ( v: unknown, fallback: number ): number =>
 			typeof v === 'number' && Number.isFinite( v ) ? v : fallback;
 		const safeFiltered: ResolvedWindowGeometry =
@@ -1190,8 +1203,16 @@ export class WindowManager {
 			coalesce( safeFiltered.height, resolvedHeight ),
 			minHeight,
 		);
-		const finalX = coalesce( safeFiltered.x, resolvedX );
-		const finalY = coalesce( safeFiltered.y, resolvedY );
+		const reserved = getReservedInsets();
+		const placement = reserved.top > 0 || reserved.left > 0 ? placementRectOf( this._desktop ) : null;
+		let finalX = coalesce( safeFiltered.x, resolvedX );
+		let finalY = coalesce( safeFiltered.y, resolvedY );
+		if ( placement && reserved.left > 0 ) {
+			finalX = Math.max( finalX, placement.x );
+		}
+		if ( placement && reserved.top > 0 ) {
+			finalY = Math.max( finalY, placement.y );
+		}
 		const finalState: WindowState | undefined =
 			safeFiltered.state ?? resolvedState;
 
