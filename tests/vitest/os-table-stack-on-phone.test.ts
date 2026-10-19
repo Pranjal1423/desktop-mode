@@ -4,6 +4,7 @@
  * grid back (sticky columns included) once the stamp is gone.
  */
 import { describe, expect, test } from 'vitest';
+import { morphChildren } from '../../src/app-runtime/morph';
 import '../../src/ui/components/os-table/os-table';
 import { stackOnPhone } from '../../src/ui/components/os-table/stack-on-phone';
 
@@ -125,6 +126,54 @@ describe( '<os-table stack-on-phone>', () => {
 		await tick();
 		expect( table.hasAttribute( 'stacked' ) ).toBe( false );
 		expect( table.getAttribute( 'sticky-columns' ) ).toBe( '3' );
+
+		container.remove();
+	} );
+
+	test( 'morphing an <os-table stack-on-phone> under mobile mode preserves stacked layout', async () => {
+		const container = document.createElement( 'div' );
+		container.setAttribute( 'data-os-mode', 'mobile' );
+		container.innerHTML = '<os-table stack-on-phone sticky-columns="2"></os-table>';
+		document.body.appendChild( container );
+		await tick();
+
+		const table = container.querySelector( 'os-table' )!;
+		expect( table.hasAttribute( 'stacked' ) ).toBe( true );
+		expect( table.hasAttribute( 'sticky-columns' ) ).toBe( false );
+
+		// Simulate view update via morph (server sends unstacked table with sticky-columns)
+		morphChildren( container, '<os-table stack-on-phone sticky-columns="2"></os-table>' );
+
+		expect( table.hasAttribute( 'stacked' ) ).toBe( true );
+		expect( table.hasAttribute( 'sticky-columns' ) ).toBe( false );
+
+		container.setAttribute( 'data-os-mode', 'desktop' );
+		await tick();
+
+		expect( table.hasAttribute( 'stacked' ) ).toBe( false );
+		expect( table.getAttribute( 'sticky-columns' ) ).toBe( '2' );
+
+		container.remove();
+	} );
+
+	test( 'dynamically removing stack-on-phone after morph restores sticky columns', async () => {
+		const container = document.createElement( 'div' );
+		container.setAttribute( 'data-os-mode', 'mobile' );
+		container.innerHTML = '<os-table stack-on-phone sticky-columns="2"></os-table>';
+		document.body.appendChild( container );
+		await tick();
+
+		const table = container.querySelector( 'os-table' )!;
+		expect( table.hasAttribute( 'stacked' ) ).toBe( true );
+		expect( table.hasAttribute( 'sticky-columns' ) ).toBe( false );
+
+		morphChildren( container, '<os-table stack-on-phone sticky-columns="2"></os-table>' );
+
+		table.removeAttribute( 'stack-on-phone' );
+		await tick();
+
+		expect( table.hasAttribute( 'stacked' ) ).toBe( false );
+		expect( table.getAttribute( 'sticky-columns' ) ).toBe( '2' );
 
 		container.remove();
 	} );

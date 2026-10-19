@@ -392,6 +392,8 @@ export class OsTable< T extends Record< string, unknown > = Record< string, unkn
 	private _modeObserver: MutationObserver | null = null;
 	private _onModeChanged: ( ( e: Event ) => void ) | null = null;
 	private _stackedByPhone = false;
+	private _syncingStackOnPhone = false;
+	_dataOsStickyColumns?: string;
 	private _stickyHeaderWarned = false;
 	private _stickyRaceWarned = false;
 	private _resizeObserver: ResizeObserver | null = null;
@@ -798,14 +800,24 @@ export class OsTable< T extends Record< string, unknown > = Record< string, unkn
 				this._teardownStackOnPhone();
 				if ( this._stackedByPhone ) {
 					this.removeAttribute( 'stacked' );
-					const kept = this.getAttribute( 'data-os-sticky-columns' );
+					const kept =
+						this.getAttribute( 'data-os-sticky-columns' ) ??
+						this._dataOsStickyColumns ??
+						null;
 					if ( kept !== null ) {
 						this.setAttribute( 'sticky-columns', kept );
 						this.removeAttribute( 'data-os-sticky-columns' );
+						delete this._dataOsStickyColumns;
 					}
 					this._stackedByPhone = false;
 				}
 			}
+		} else if (
+			( name === 'stacked' || name === 'sticky-columns' ) &&
+			this.isConnected &&
+			this.hasAttribute( 'stack-on-phone' )
+		) {
+			this._syncStackOnPhone();
 		}
 	}
 
@@ -863,12 +875,17 @@ export class OsTable< T extends Record< string, unknown > = Record< string, unkn
 	}
 
 	private _syncStackOnPhone(): void {
-		if ( ! this.hasAttribute( 'stack-on-phone' ) ) {
+		if ( ! this.hasAttribute( 'stack-on-phone' ) || this._syncingStackOnPhone ) {
 			return;
 		}
-		const stampRoot = this._findModeStampRoot();
-		const isPhone = stackOnPhone( this, stampRoot );
-		this._stackedByPhone = isPhone;
+		this._syncingStackOnPhone = true;
+		try {
+			const stampRoot = this._findModeStampRoot();
+			const isPhone = stackOnPhone( this, stampRoot );
+			this._stackedByPhone = isPhone;
+		} finally {
+			this._syncingStackOnPhone = false;
+		}
 	}
 
 	/**

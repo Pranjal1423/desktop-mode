@@ -15,6 +15,10 @@
  */
 import { isMobileStamped, MODE_ATTRIBUTE } from '../../../mode/stamp';
 
+interface StackOnPhoneElement extends Element {
+	_dataOsStickyColumns?: string;
+}
+
 /**
  * Apply the phone layout to a table when the shell is in its phone
  * mode, and lift it otherwise. Returns whether the table is stacked.
@@ -34,20 +38,32 @@ export function stackOnPhone( table: Element, root: Element | null = null ): boo
 		}
 		// A pinned column over a card list has nothing to pin against;
 		// the attribute is remembered so the grid gets it back.
-		const sticky = table.getAttribute( 'sticky-columns' );
+		const sticky =
+			table.getAttribute( 'sticky-columns' ) ??
+			( table as StackOnPhoneElement )._dataOsStickyColumns ??
+			null;
 		if ( sticky !== null ) {
-			table.setAttribute( 'data-os-sticky-columns', sticky );
-			table.removeAttribute( 'sticky-columns' );
+			if ( table.getAttribute( 'data-os-sticky-columns' ) !== sticky ) {
+				table.setAttribute( 'data-os-sticky-columns', sticky );
+			}
+			( table as StackOnPhoneElement )._dataOsStickyColumns = sticky;
+			if ( table.hasAttribute( 'sticky-columns' ) ) {
+				table.removeAttribute( 'sticky-columns' );
+			}
 		}
 		return true;
 	}
 	if ( table.hasAttribute( 'stacked' ) ) {
 		table.removeAttribute( 'stacked' );
 	}
-	const kept = table.getAttribute( 'data-os-sticky-columns' );
+	const kept =
+		table.getAttribute( 'data-os-sticky-columns' ) ??
+		( table as StackOnPhoneElement )._dataOsStickyColumns ??
+		null;
 	if ( kept !== null ) {
 		table.setAttribute( 'sticky-columns', kept );
 		table.removeAttribute( 'data-os-sticky-columns' );
+		delete ( table as StackOnPhoneElement )._dataOsStickyColumns;
 	}
 	return false;
 }
