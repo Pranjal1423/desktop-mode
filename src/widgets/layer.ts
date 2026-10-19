@@ -41,13 +41,17 @@ import {
 	loadDockedHeights,
 	loadEnabledIds,
 	loadGeometry,
+	loadGeometryFrame,
 	readRawEnabled,
 	saveDockedHeights,
 	saveEnabledIds,
 	saveGeometry,
+	saveGeometryFrame,
 } from './state';
+import { reflowGeometry, type FrameSize } from './reflow';
 import { getActiveDesktopThemeId, getDesktopTheme } from '../desktop-themes/registry';
 import { showInlineLoader } from '../ui/inline-loader';
+import { contentBox, type Box } from './content-box';
 import { createWidgetStorage } from './storage';
 import type { WidgetGeometry, WidgetTeardown } from './types';
 
@@ -103,8 +107,18 @@ export class WidgetLayer {
 	 * desk changes that desk and never the user's persisted pick.
 	 */
 	private override: string[] | null = null;
+	/** Where floating cards are now, for the current host size. */
 	private geometry: Record< string, WidgetGeometry >;
+	/**
+	 * The arrangement the user made and the host size they made it at:
+	 * what is stored. Every reflow starts from here, never from the last
+	 * reflow, so no resize path can drift or misread an edge.
+	 */
+	private layout: Record< string, WidgetGeometry >;
+	private layoutFrame: FrameSize | null;
 	private dockedHeights: Record< string, number >;
+	/** Host size `geometry` was last reflowed to. */
+	private frameSize: FrameSize | null;
 	private mounted: Map< string, MountedWidget > = new Map();
 
 	/**
@@ -146,8 +160,11 @@ export class WidgetLayer {
 		this.root = root;
 		this.pluginUrl = pluginUrl;
 		this.enabledIds = loadEnabledIds();
-		this.geometry = loadGeometry();
+		this.layout = loadGeometry();
+		this.geometry = { ...this.layout };
 		this.dockedHeights = loadDockedHeights();
+		this.layoutFrame = loadGeometryFrame();
+		this.frameSize = this.layoutFrame;
 		this.floatingHost = floatingHost ?? root.parentElement ?? root;
 
 		this.listEl = document.createElement( 'div' );
@@ -194,6 +211,10 @@ export class WidgetLayer {
 			);
 			saveEnabledIds( this.enabledIds );
 		}
+
+		// Last session may have closed at another size; move the
+		// floats before they mount so they never paint at stale spots.
+		this.reflowToHost();
 
 		for ( const id of this.visibleIds() ) {
 			if ( this.mounted.has( id ) ) {
@@ -299,7 +320,7 @@ export class WidgetLayer {
 	private forgetLayout( id: string ): void {
 		if ( this.geometry[ id ] ) {
 			delete this.geometry[ id ];
-			saveGeometry( this.geometry );
+			this.commitLayout();
 		}
 		if ( this.dockedHeights[ id ] !== undefined ) {
 			delete this.dockedHeights[ id ];
@@ -684,11 +705,12 @@ export class WidgetLayer {
 	 * leaves the reveal zone hovering over empty desktop.
 	 */
 	private watchPointerProximity(): void {
-		let rect: DOMRect | null = null;
+		let rect: Box | null = null;
 		let frame = 0;
 
 		const invalidate = (): void => {
 			rect = null;
+			this.reflowToHost();
 			this.positionAddTile();
 		};
 		// The reveal itself is a cached-rect comparison, cheap enough
@@ -706,7 +728,7 @@ export class WidgetLayer {
 		};
 		const onMove = ( e: PointerEvent ): void => {
 			if ( ! rect ) {
-				rect = this.root.getBoundingClientRect();
+				rect = contentBox( this.root );
 			}
 			const near =
 				e.clientX >= rect.left - HOVER_PADDING &&
@@ -817,7 +839,7 @@ export class WidgetLayer {
 		// concurrent boot doesn't pick up stale floating coords.
 		if ( this.geometry[ id ] ) {
 			delete this.geometry[ id ];
-			saveGeometry( this.geometry );
+			this.commitLayout();
 		}
 		// Strip the inline geometry so the card renders back at its
 		// flex-column natural size — no phantom left/top offsets
@@ -862,10 +884,61 @@ export class WidgetLayer {
 		}
 	}
 
+	/**
+	 * Keep floating cards arranged the way the user left them when the
+	 * desktop area changes size (window resize, PWA window stretched,
+	 * dock moved to a side). Groups of touching cards follow the edge
+	 * they sit nearest to; see {@link reflowGeometry}. Runs on boot too,
+	 * against the size the arrangement was made at. Nothing is stored:
+	 * the reflow always starts from the user's arrangement.
+	 */
+	private reflowToHost(): void {
+		const size = {
+			width: this.floatingHost.clientWidth,
+			height: this.floatingHost.clientHeight,
+		};
+		if ( ! size.width || ! size.height ) {
+			return;
+		}
+		const last = this.frameSize;
+		if ( last && last.width === size.width && last.height === size.height ) {
+			return;
+		}
+		this.frameSize = size;
+		if ( ! this.layoutFrame ) {
+			this.layoutFrame = size;
+			saveGeometryFrame( size );
+			return;
+		}
+		this.geometry = reflowGeometry( this.layout, this.layoutFrame, size );
+		// Clamp what is painted, not what is stored, as a mount does: a
+		// grid that meets the edge must come back when the window widens.
+		for ( const [ id, record ] of this.mounted ) {
+			const next = this.geometry[ id ];
+			if ( record.floating && next ) {
+				applyGeometry( record.frame.card, clampGeometryToParent( next, this.floatingHost ) );
+			}
+		}
+	}
+
 	private persistGeometry( id: string, geometry: WidgetGeometry ): void {
 		this.geometry[ id ] = geometry;
-		saveGeometry( this.geometry );
+		this.commitLayout();
 		this.positionAddTile();
+	}
+
+	/** Store what is on screen now as the user's arrangement, at this size. */
+	private commitLayout(): void {
+		this.layout = { ...this.geometry };
+		saveGeometry( this.layout );
+		const size = this.floatingHost.clientWidth
+			? { width: this.floatingHost.clientWidth, height: this.floatingHost.clientHeight }
+			: this.frameSize;
+		if ( size ) {
+			this.frameSize = size;
+			this.layoutFrame = size;
+			saveGeometryFrame( size );
+		}
 	}
 
 	/**
@@ -887,6 +960,10 @@ export class WidgetLayer {
 		if ( ! colRect.height ) {
 			return;
 		}
+		// `top` is written against the column's border box, but the
+		// stack lives in its content box: the padding around it is
+		// room for the cards' shadow, not somewhere the pill goes.
+		const content = contentBox( this.root );
 		let bottom = this.listEl.offsetTop + this.listEl.offsetHeight;
 		for ( const record of this.mounted.values() ) {
 			if ( ! record.floating ) {
@@ -894,9 +971,9 @@ export class WidgetLayer {
 			}
 			const rect = record.frame.card.getBoundingClientRect();
 			const overlap =
-				Math.min( rect.right, colRect.right ) -
-				Math.max( rect.left, colRect.left );
-			if ( overlap < colRect.width / 2 ) {
+				Math.min( rect.right, content.right ) -
+				Math.max( rect.left, content.left );
+			if ( overlap < content.width / 2 ) {
 				continue;
 			}
 			bottom = Math.max(
@@ -907,8 +984,14 @@ export class WidgetLayer {
 		// Never past the column's visible foot — a tall stack pushes
 		// the pill onto the last card rather than off the screen.
 		const limit =
-			colRect.height + this.root.scrollTop - this.addTile.offsetHeight;
-		const top = Math.max( 0, Math.min( bottom + ADD_TILE_GAP, limit ) );
+			content.bottom -
+			colRect.top +
+			this.root.scrollTop -
+			this.addTile.offsetHeight;
+		const top = Math.max(
+			content.top - colRect.top,
+			Math.min( bottom + ADD_TILE_GAP, limit ),
+		);
 		if ( this.addTile.style.top === `${ top }px` ) {
 			return;
 		}

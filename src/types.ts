@@ -929,6 +929,15 @@ export interface NativeWindowCompanionScript {
  * the entries by `hydrateServerEntries()` before the sync consumes
  * them. Field names mirror `openstation_resolve_script_payload()`.
  */
+/**
+ * The one handle-keyed script map (GH#898): every entry list's
+ * `scriptDeps` and every native window's bundles resolve through it.
+ * A value is a {@link LazyScriptDependency}; a handle the server
+ * resolved as a window's own bundle also names its dependency closure
+ * in `deps`, the same field {@link NativeWindowScriptData} carries.
+ */
+export type ScriptPayloads = Record< string, LazyScriptDependency & { deps?: string[] } >;
+
 export type NativeWindowScriptData = Record<
 	string,
 	{
@@ -1186,6 +1195,8 @@ export interface DesktopWidgetServerEntry {
 	maxHeight: number;
 	defaultWidth: number;
 	defaultHeight: number;
+	/** Let the card grow to fit its content. See `WidgetDef.fitContent`. */
+	fitContent?: boolean;
 	/** Absolute URL of the plugin's enqueued script. Empty when no script was declared. */
 	scriptUrl: string;
 	/** WordPress script handle (informational). */
@@ -2088,7 +2099,7 @@ export interface DesktopConfig {
 	 * at boot and on every menu refresh, so readers of `scriptDeps`
 	 * see full payloads. See `src/script-dep-payloads.ts` (GH#892).
 	 */
-	scriptDepPayloads?: Record< string, LazyScriptDependency >;
+	scriptDepPayloads?: ScriptPayloads;
 	/**
 	 * Server-declared widgets (from `openstation_register_widget()`).
 	 * Same lifecycle story as native windows — shell syncs the
@@ -2287,7 +2298,7 @@ export interface DesktopConfig {
 	 * `openstation_register_file_opener()`). PHP ships metadata
 	 * only — the JS bundle that registers the opener carries the
 	 * executable handler. The OS Settings → File Associations tab
-	 * (Phase 5) renders pickers from this list.
+	 * renders pickers from this list.
 	 */
 	serverFileOpeners?: Array< {
 		id: string;
@@ -2794,6 +2805,7 @@ export interface DesktopConfig {
 		games: boolean;
 		agents: boolean;
 		network: boolean;
+		pulse_visitors: boolean;
 	} | null;
 	/**
 	 * REST endpoint for reading/writing extended options (admin only).

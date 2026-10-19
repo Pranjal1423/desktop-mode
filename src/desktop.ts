@@ -137,6 +137,7 @@ import {
 	createNativeWindowSync,
 	createRegisterWindow,
 	hydrateServerEntries,
+	windowScriptData,
 	type NativeWindowRestoreState,
 	type WindowLifecycleHandlers,
 } from './native-windows';
@@ -2104,9 +2105,9 @@ export interface OpenStationPublicApi {
 	 * permission is denied / unsupported). Returns a dismiss
 	 * callback. Routes through `os/notification-requested`
 	 * (filterable) and broadcasts on
-	 * `os/notification-shown` after rendering. v1 is
-	 * page-scoped local notifications only — phase 4 will extend
-	 * this to Web Push without breaking the call surface.
+	 * `os/notification-shown` after rendering. Notifications are
+	 * page-scoped and local only; Web Push can be added later
+	 * without breaking the call surface.
 	 */
 	notify: ( opts: NotifyOptions ) => () => void;
 	/**
@@ -3829,7 +3830,7 @@ function init(): void {
 	void syncNativeWindows(
 		hydrateServerEntries(
 			Array.isArray( config.nativeWindows ) ? config.nativeWindows : [],
-			config.nativeWindowScriptData,
+			windowScriptData( config ),
 		),
 	);
 
@@ -5407,7 +5408,7 @@ function init(): void {
 	// "after first paint" timing.
 	const overlayPreload = (): void => {
 		preloadShellOverlays( config.shellOverlaysBundleUrl ?? '' );
-		// Window system (Stage 11) — preload alongside the
+		// Window system — preload alongside the
 		// overlays. By the time the user clicks an icon and
 		// `windowManager.open()` runs, the lazy bundle is
 		// registered and `createWindow()`'s `await` resolves on
@@ -5937,7 +5938,7 @@ function init(): void {
 
 // `restoreSession` and `openCurrentPage` were moved to
 // `src/boot/session.ts` — see the imports near the top of
-// this file. This is the architecture-0.8.1 phase-5 split.
+// this file.
 
 // `trackedFetch` was moved to `src/boot/tracked-fetch.ts`.
 

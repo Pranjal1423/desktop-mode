@@ -21,6 +21,9 @@ import { isMobileStamped } from '../mode/stamp';
 import { workAreaRectOf } from '../work-area';
 import { snapHalfRect } from '../window-manager/geometry';
 import { __, _x, sprintf } from './../i18n';
+import { copyText } from '../app-runtime/clipboard';
+import { nativeShareableUrl, shareableUrl } from './share-link';
+import { focusIsFromUser } from './focus-intent';
 import { attachTooltip } from '../ui/components/os-tooltip/os-tooltip';
 import {
 	addParentSubscriber,
@@ -130,6 +133,7 @@ import {
 import type { PanelTabEntry } from './tabs';
 import {
 	closeActionsMenu,
+	confirmCopyInMenu,
 	describeActionsMenu,
 	flipMenuItemCheckOptimistically,
 	openActionsMenu,
@@ -247,6 +251,15 @@ export class Window {
 	 * @internal
 	 */
 	public _reportedLocation: { url: string; src: string } | null = null;
+
+	/**
+	 * Id of the dock tile whose menu WordPress files the framed page
+	 * under, as the page reported it (`os-menu-owner`). Empty when it
+	 * reported none.
+	 *
+	 * @internal
+	 */
+	public _menuOwner = '';
 
 	/** @internal */
 	public _titleBar: HTMLElement;
@@ -1248,8 +1261,13 @@ export class Window {
 		// session). Does NOT cover mouse clicks inside the iframe —
 		// those are handled by the shell-level window.blur listener
 		// that inspects document.activeElement.
-		this.element.addEventListener( 'focusin', () => {
+		this.element.addEventListener( 'focusin', ( e: FocusEvent ) => {
 			if ( this.element.classList.contains( 'os-window--overview' ) ) {
+				return;
+			}
+			// A page that focused itself while loading did not pick
+			// this window; see `focus-intent.ts`.
+			if ( ( e.target as Element | null )?.tagName === 'IFRAME' && ! focusIsFromUser() ) {
 				return;
 			}
 			this.onFocusRequest?.( this );
@@ -1331,6 +1349,19 @@ export class Window {
 					e.stopPropagation();
 					closeActionsMenu( this );
 					this.onOpenInNewWindow?.( this );
+				} );
+			}
+			const copyLink = menuPanel.querySelector(
+				'.os-window__menu-item--copy-link',
+			);
+			if ( copyLink ) {
+				copyLink.addEventListener( 'os-menu-item-click', ( e: Event ) => {
+					// The menu stays open: the row itself says "Link
+					// copied", then the menu closes on its own.
+					e.stopPropagation();
+					void this.copyLink().then( ( copied ) =>
+						confirmCopyInMenu( this, copyLink as HTMLElement, copied ),
+					);
 				} );
 			}
 			// "Reload" + "Open in classic wp-admin" moved here from the
@@ -2853,6 +2884,31 @@ export class Window {
 	}
 
 	/**
+	 * The link "Copy link" would hand out right now, or `''` when this
+	 * window shows nothing anyone else could open. An iframe window
+	 * shares its page; a native one shares the admin page embedded in
+	 * it, or the screen its visible tab stands for (see `share-link.ts`).
+	 */
+	public shareableLink(): string {
+		return this.config.native
+			? nativeShareableUrl( this, INITIAL_ORIGIN )
+			: shareableUrl( this.getCurrentUrl(), INITIAL_ORIGIN );
+	}
+
+	/**
+	 * Put a shareable link to the page this window shows on the
+	 * clipboard. The URL is read now, so a window that navigated since
+	 * it opened shares where it is. The ⋯ menu's row confirms it (see
+	 * `confirmCopyInMenu()`).
+	 *
+	 * Resolves whether the link was copied.
+	 */
+	public async copyLink(): Promise< boolean > {
+		const link = this.shareableLink();
+		return link !== '' && copyText( link );
+	}
+
+	/**
 	 * Open the window's current URL in a new browser tab as classic
 	 * wp-admin.
 	 *
@@ -2942,10 +2998,13 @@ export class Window {
 				try {
 					iframe.contentWindow?.location.reload();
 				} catch {
-					// Cross-origin or detached frame — re-assign src
-					// as a fallback. The current src is what's already
-					// loaded, so re-setting it triggers a fresh load.
-					iframe.src = iframe.src;
+					// An isolated page (the block editor sends
+					// `Document-Isolation-Policy`) or a detached frame.
+					// Load the URL the page last reported, not `src`:
+					// the editor rewrites its own URL on a first save,
+					// and `src` would reload post-new.php, an empty new
+					// draft instead of the post that was just saved.
+					iframe.src = withChromelessParam( reloadedUrl ) ?? iframe.src;
 				}
 			};
 		} else {

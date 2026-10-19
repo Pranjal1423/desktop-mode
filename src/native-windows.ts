@@ -29,11 +29,14 @@ import { isMobileStamped } from './mode/stamp';
 import { injectInlineScript, loadVendorScript } from './wallpapers/vendor-loader';
 import { registerSyntheticIframe } from './connection';
 import { isShellDocumentUrl } from './shell-url';
+import { recordFrameLocation, setWindowMenuPages } from './window/share-link';
+import { relayIframeReport } from './window/iframe-reports';
 import {
 	registerNativeUrlRemap,
 	unregisterNativeUrlRemap,
 } from './native-url-remap';
 import { setPanelTabs } from './window/tab-strip';
+import { loadComponents } from './ui/components/loader';
 import { getWindowContent, setWindowContent } from './window-links/engine';
 import type { WindowContentRef } from './window-links/types';
 import {
@@ -555,6 +558,19 @@ function buildIframeContentRender(
 				).__openStationConnectionBridge;
 				bridgeRouter?.routeIncomingFromIframe( data, windowId );
 			}
+			// Where the page is, for "Copy link": an isolated frame (the
+			// block editor in Chromium) cannot be read, and its first
+			// save rewrites `post-new.php` in place.
+			if (
+				data &&
+				typeof data === 'object' &&
+				( ( data as { type?: string } ).type === 'os-iframe-navigated' ||
+					( data as { type?: string } ).type === 'os-iframe-location' ) &&
+				typeof ( data as { url?: unknown } ).url === 'string' &&
+				( data as { url: string } ).url !== ''
+			) {
+				recordFrameLocation( iframe, ( data as { url: string } ).url );
+			}
 			// Unified window-channel publish from the synthetic iframe.
 			// Mirror of the equivalent block in `src/window/iframe-bridge.ts`
 			// — keeps `iframeContent` native windows participating in
@@ -572,6 +588,15 @@ function buildIframeContentRender(
 					( data as { channel: string } ).channel,
 					( data as { payload?: unknown } ).payload,
 				);
+			}
+			// The chromeless bridge's error and network reports, relayed
+			// exactly as `src/window/iframe-bridge.ts` relays them for an
+			// iframe window. Without this an embedded page — the Posts
+			// app's block editor — never reached `os.iframe.error` or
+			// `os.iframe.network-completed`. Same-origin only, matching
+			// the bridge's own trust boundary.
+			if ( e.origin === window.location.origin ) {
+				relayIframeReport( windowId, data );
 			}
 			// Content identity of the page in this iframe — the same
 			// announcement `src/window/iframe-bridge.ts` forwards for an
@@ -1207,6 +1232,12 @@ function declareServerTabs(
 	if ( ! Array.isArray( tabs ) || tabs.length < 2 ) {
 		return;
 	}
+	// The wrap PHP puts around the panes is the shell's markup, made
+	// of two tags only the component kit registers. Nothing else is
+	// guaranteed to have loaded the kit, a session restore after a
+	// reload least of all, so ask for it here. A failed fetch is left
+	// to the missing-import warner, which names both tags.
+	loadComponents( [ 'os-stack', 'os-tabpanel' ] ).catch( () => {} );
 	const winEl = body.closest< HTMLElement >( '.os-window' );
 	if ( ! winEl ) {
 		return;
@@ -1217,6 +1248,31 @@ function declareServerTabs(
 		// The window's own template is the pane that opens.
 		tabs.find( ( tab ) => tab.isMain )?.value,
 	);
+}
+
+/**
+ * The map a native window's handles resolve through.
+ *
+ * Since GH#898 that is the one `scriptDepPayloads` map every entry
+ * list shares. A payload from an older server (a menu refresh through
+ * a bridge page that predates it) carries `nativeWindowScriptData`.
+ * Servers from #893 to GH#898 (v1.1.11 to v1.1.13) send both, and their
+ * shared map holds only entry dependencies, so the two are merged with
+ * the windows' data winning a handle, the same order the server uses.
+ *
+ * @param source A boot config or menu-refresh payload.
+ */
+export function windowScriptData( source: {
+	scriptDepPayloads?: unknown;
+	nativeWindowScriptData?: unknown;
+} | null | undefined ): NativeWindowScriptData | undefined {
+	const shared = source?.scriptDepPayloads && typeof source.scriptDepPayloads === 'object'
+		? ( source.scriptDepPayloads as NativeWindowScriptData )
+		: undefined;
+	const legacy = source?.nativeWindowScriptData && typeof source.nativeWindowScriptData === 'object'
+		? ( source.nativeWindowScriptData as NativeWindowScriptData )
+		: undefined;
+	return shared && legacy ? { ...shared, ...legacy } : shared ?? legacy;
 }
 
 /**
@@ -1969,6 +2025,7 @@ export function createNativeWindowSync(
 	const syncMenuPages = ( entry: NativeWindowServerEntry ): void => {
 		const id = menuPagesRemapId( entry.id );
 		const pages = entry.menuPages ?? [];
+		setWindowMenuPages( entry.id, pages );
 		if ( pages.length === 0 ) {
 			unregisterNativeUrlRemap( id );
 			return;
@@ -2015,6 +2072,7 @@ export function createNativeWindowSync(
 			if ( ! incoming.has( id ) ) {
 				unregisterTile( id );
 				unregisterNativeUrlRemap( menuPagesRemapId( id ) );
+				setWindowMenuPages( id, [] );
 			}
 		}
 
